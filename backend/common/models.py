@@ -12,11 +12,13 @@ class Position:
     ticker: str
     position_type: Literal['stock', 'call', 'put']
     qty: float
+    account: Optional[str] = None
     strike: Optional[float] = None
     expiry: Optional[str] = None
     dte: Optional[int] = None
     cost_basis: Optional[float] = 0.0
     unrealized_pnl: Optional[float] = 0.0
+    daily_pnl: Optional[float] = 0.0
     current_price: Optional[float] = 0.0
     underlying_price: Optional[float] = None
     # Greeks

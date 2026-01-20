@@ -127,6 +127,7 @@ class AlpacaBroker(BrokerInterface):
                     expiry=None,  # Would need to parse from option symbol
                     cost_basis=safe_float(pos.cost_basis),
                     unrealized_pnl=safe_float(pos.unrealized_pl),
+                    daily_pnl=safe_float(pos.unrealized_intraday_pl),
                     current_price=safe_float(pos.current_price),
                 )
                 result.append(position)

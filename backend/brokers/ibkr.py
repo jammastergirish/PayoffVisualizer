@@ -746,6 +746,8 @@ class IBKRBroker(BrokerInterface):
                 dte=pos_dict.get("dte"),
                 cost_basis=pos_dict.get("cost_basis"),
                 unrealized_pnl=pos_dict.get("unrealized_pnl"),
+                daily_pnl=pos_dict.get("daily_pnl"),
+                account=pos_dict.get("account"),
                 current_price=pos_dict.get("current_price"),
                 underlying_price=pos_dict.get("underlying_price"),
                 delta=pos_dict.get("delta"),

@@ -1352,9 +1352,6 @@ export function PayoffDashboard() {
             const totalRealizedPnl = selectedAccount !== 'All' && accountSummaries[selectedAccount]
               ? accountSummaries[selectedAccount].realized_pnl
               : Object.values(accountSummaries).reduce((sum, s) => sum + s.realized_pnl, 0);
-            const costBasis = totalNetLiq - portfolioUnrealizedPnl;
-            const totalGain = totalRealizedPnl + portfolioUnrealizedPnl;
-            const ytdPct = costBasis > 0 ? (totalGain / costBasis) * 100 : 0;
             
             return (
               <>
@@ -1374,14 +1371,6 @@ export function PayoffDashboard() {
                     </div>
                   </div>
                 )}
-                
-                {/* YTD % - second */}
-                <div className="bg-slate-900/80 border border-white/10 rounded-lg px-3 py-2 min-w-[110px]">
-                  <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">YTD %</div>
-                  <div className={`text-lg font-bold ${ytdPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {ytdPct >= 0 ? '+' : ''}{ytdPct.toFixed(1)}%
-                  </div>
-                </div>
                 
                 {/* Today - third */}
                 {selectedAccount !== 'All' && accountSummaries[selectedAccount] ? (
