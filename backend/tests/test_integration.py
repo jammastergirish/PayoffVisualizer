@@ -6,24 +6,34 @@ import pytest
 client = TestClient(app)
 
 def test_health_check():
-    # Mock IB connection status
-    with patch('backend.ib_client.ib_client.ib.isConnected', return_value=True):
+    # Mock broker connection status
+    with patch('backend.config.config._broker') as mock_broker:
+        mock_broker.is_connected.return_value = True
         response = client.get("/api/health")
         assert response.status_code == 200
-        assert response.json() == {"status": "ok", "ib_connected": True}
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["broker_connected"] is True
 
 def test_get_portfolio_offline():
     # If not connected, should return error or empty
-    with patch('backend.ib_client.ib_client.ib.isConnected', return_value=False):
+    with patch('backend.config.config._broker') as mock_broker:
+        mock_broker.is_connected.return_value = False
         response = client.get("/api/portfolio")
         assert response.status_code == 200
-        assert response.json() == {"error": "Not connected to IBKR", "positions": []}
+        data = response.json()
+        assert "error" in data
+        assert "Not connected to" in data["error"]
+        assert data["positions"] == []
 
 def test_get_portfolio_connected():
-    with patch('backend.ib_client.ib_client.ib.isConnected', return_value=True):
-        with patch('backend.ib_client.ib_client.get_positions') as mock_get:
-            mock_get.return_value = [{"ticker": "TEST", "qty": 10}]
-            
-            response = client.get("/api/portfolio")
-            assert response.status_code == 200
-            assert response.json() == {"positions": [{"ticker": "TEST", "qty": 10}]}
+    with patch('backend.config.config._broker') as mock_broker:
+        mock_broker.is_connected.return_value = True
+        mock_broker.get_positions.return_value = [{"ticker": "TEST", "qty": 10}]
+        mock_broker.get_account_summary.return_value = {}
+
+        response = client.get("/api/portfolio")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["positions"] == [{"ticker": "TEST", "qty": 10}]
+        assert "summary" in data

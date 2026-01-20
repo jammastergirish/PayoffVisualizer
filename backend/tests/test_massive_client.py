@@ -77,8 +77,8 @@ class MockRefNewsArticle:
 @pytest.fixture
 def mock_massive_client():
     """Create a mock Massive REST client."""
-    with patch('backend.massive_client._client') as mock_client:
-        with patch('backend.massive_client._api_key', 'test_api_key'):
+    with patch('backend.providers.massive._client') as mock_client:
+        with patch('backend.providers.massive._api_key', 'test_api_key'):
             mock_client.get_aggs = MagicMock()
             mock_client.get_ticker_details = MagicMock()
             mock_client.list_benzinga_news_v2 = MagicMock()
@@ -366,9 +366,9 @@ class TestGetMarketNews:
         
         result = get_market_news(limit=10)
         
-        # Should have called for each market ticker (SPY, QQQ, DIA)
-        assert mock_massive_client.list_benzinga_news_v2.call_count == 3
-        assert mock_massive_client.list_ticker_news.call_count == 3
+        # Should have called for each market ticker (SPY, QQQ, DIA, IWM, VIX, GOLD)
+        assert mock_massive_client.list_benzinga_news_v2.call_count == 6
+        assert mock_massive_client.list_ticker_news.call_count == 6
         assert "headlines" in result
     
     def test_deduplicates_headlines(self, mock_massive_client):
@@ -408,7 +408,7 @@ class TestGetMarketNews:
         """Test that function handles missing API client gracefully."""
         from backend.providers.massive import get_market_news
         
-        with patch('backend.massive_client._client', None):
+        with patch('backend.providers.massive._client', None):
             result = get_market_news(limit=10)
         
         assert result["headlines"] == []

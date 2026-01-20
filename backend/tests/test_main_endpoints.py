@@ -17,10 +17,11 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
-def mock_ib_client():
-    """Mock ib_client to avoid real IBKR connections."""
-    with patch('backend.main.ib_client') as mock:
-        mock.ib.isConnected.return_value = False
+def mock_broker():
+    """Mock broker to avoid real broker connections."""
+    with patch('backend.config.config._broker') as mock:
+        if mock:
+            mock.is_connected.return_value = False
         yield mock
 
 
@@ -40,22 +41,22 @@ class TestHealthEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "status" in data
-        assert "ib_connected" in data
+        assert "broker_connected" in data
         assert data["status"] == "ok"
     
-    def test_health_check_shows_disconnected(self, client, mock_ib_client):
-        mock_ib_client.ib.isConnected.return_value = False
+    def test_health_check_shows_disconnected(self, client, mock_broker):
+        mock_broker.is_connected.return_value = False
         
         response = client.get("/api/health")
         
-        assert response.json()["ib_connected"] == False
+        assert response.json()["broker_connected"] == False
 
 
 class TestPortfolioEndpoint:
     """Tests for GET /api/portfolio endpoint."""
     
-    def test_returns_error_when_disconnected(self, client, mock_ib_client):
-        mock_ib_client.ib.isConnected.return_value = False
+    def test_returns_error_when_disconnected(self, client, mock_broker):
+        mock_broker.is_connected.return_value = False
         
         response = client.get("/api/portfolio")
         
@@ -64,32 +65,31 @@ class TestPortfolioEndpoint:
         assert "error" in data
         assert data["positions"] == []
     
-    def test_returns_positions_when_connected(self, client, mock_ib_client):
-        mock_ib_client.ib.isConnected.return_value = True
-        mock_ib_client.get_positions.return_value = {
-            "accounts": ["TEST123"],
-            "positions": [{"ticker": "AAPL", "qty": 100}],
-            "summary": {}
-        }
+    def test_returns_positions_when_connected(self, client, mock_broker):
+        mock_broker.is_connected.return_value = True
+        mock_broker.get_positions.return_value = [{"ticker": "AAPL", "qty": 100}]
+        mock_broker.get_account_summary.return_value = {}
         
         response = client.get("/api/portfolio")
         
         assert response.status_code == 200
         data = response.json()
-        assert "accounts" in data
+        assert "positions" in data
         assert len(data["positions"]) == 1
+        assert data["positions"][0]["ticker"] == "AAPL"
 
 
 class TestHistoricalEndpoint:
     """Tests for GET /api/historical/{symbol} endpoint."""
     
     def test_fetches_historical_data(self, client):
-        with patch('backend.main.get_historical_bars') as mock_bars:
-            mock_bars.return_value = {
-                "symbol": "AAPL",
-                "timeframe": "1M",
-                "bars": [{"date": "2026-01-01", "close": 150.0}]
-            }
+        with patch('backend.main.data_provider.get_historical_data') as mock_bars:
+            # Mock HistoricalBar objects
+            from backend.common.models import HistoricalBar
+            from datetime import datetime
+            mock_bars.return_value = [
+                HistoricalBar(date=datetime(2026, 1, 1), open=149.0, high=151.0, low=148.0, close=150.0, volume=1000000)
+            ]
             
             response = client.get("/api/historical/aapl")
             
@@ -97,16 +97,16 @@ class TestHistoricalEndpoint:
             mock_bars.assert_called_with("AAPL", "1M")
     
     def test_accepts_timeframe_parameter(self, client):
-        with patch('backend.main.get_historical_bars') as mock_bars:
-            mock_bars.return_value = {"symbol": "TSLA", "timeframe": "1Y", "bars": []}
+        with patch('backend.main.data_provider.get_historical_data') as mock_bars:
+            mock_bars.return_value = []  # Empty list of bars
             
             response = client.get("/api/historical/tsla?timeframe=1y")
             
             mock_bars.assert_called_with("TSLA", "1Y")
     
     def test_uppercases_symbol(self, client):
-        with patch('backend.main.get_historical_bars') as mock_bars:
-            mock_bars.return_value = {"symbol": "NVDA", "bars": []}
+        with patch('backend.main.data_provider.get_historical_data') as mock_bars:
+            mock_bars.return_value = []  # Empty list of bars
             
             client.get("/api/historical/nvda")
             
@@ -117,7 +117,7 @@ class TestTickerEndpoint:
     """Tests for GET /api/ticker/{symbol} endpoint."""
     
     def test_fetches_ticker_details(self, client):
-        with patch('backend.main.get_ticker_details') as mock_details:
+        with patch('backend.main.data_provider.get_ticker_details') as mock_details:
             mock_details.return_value = {
                 "symbol": "AAPL",
                 "name": "Apple Inc.",
@@ -136,7 +136,7 @@ class TestSnapshotEndpoint:
     """Tests for GET /api/snapshot/{symbol} endpoint."""
     
     def test_fetches_price_snapshot(self, client):
-        with patch('backend.main.get_daily_snapshot') as mock_snapshot:
+        with patch('backend.main.data_provider.get_daily_snapshot') as mock_snapshot:
             mock_snapshot.return_value = {
                 "symbol": "GOOG",
                 "current_price": 175.50,
@@ -157,13 +157,11 @@ class TestNewsEndpoint:
     """Tests for GET /api/news/{symbol} endpoint."""
     
     def test_fetches_news_headlines(self, client):
-        with patch('backend.main.get_news') as mock_news:
-            mock_news.return_value = {
-                "symbol": "TSLA",
-                "headlines": [
-                    {"headline": "Tesla announces new model", "providerCode": "BZ"}
-                ]
-            }
+        with patch('backend.main.news_provider.get_news') as mock_news:
+            # news_provider.get_news returns just the headlines list
+            mock_news.return_value = [
+                {"headline": "Tesla announces new model", "providerCode": "BZ"}
+            ]
             
             response = client.get("/api/news/tsla")
             
@@ -173,8 +171,8 @@ class TestNewsEndpoint:
             mock_news.assert_called_with("TSLA", 15)  # Default limit
     
     def test_accepts_limit_parameter(self, client):
-        with patch('backend.main.get_news') as mock_news:
-            mock_news.return_value = {"symbol": "AAPL", "headlines": []}
+        with patch('backend.main.news_provider.get_news') as mock_news:
+            mock_news.return_value = []  # Empty headlines list
             
             client.get("/api/news/aapl?limit=30")
             
@@ -185,7 +183,7 @@ class TestNewsArticleEndpoint:
     """Tests for GET /api/news/article/{article_id} endpoint."""
     
     def test_fetches_article(self, client):
-        with patch('backend.main.massive_get_article') as mock_article:
+        with patch('backend.main.news_provider.get_news_article') as mock_article:
             mock_article.return_value = {
                 "articleId": "123",
                 "text": "Full article text..."

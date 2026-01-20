@@ -11,46 +11,39 @@ import pytest
 import math
 from unittest.mock import MagicMock, patch
 from backend.brokers.ibkr import IBClient, PositionModel
+from backend.common.utils import safe_float
 
 
 class TestSafeFloat:
-    """Tests for IBClient._safe_float method."""
-    
-    @pytest.fixture
-    def client(self):
-        """Create IBClient without connecting."""
-        with patch('backend.ib_client.IB') as MockIB:
-            client = IBClient()
-            client.connected = False
-            return client
-    
-    def test_handles_none(self, client):
-        assert client._safe_float(None) == 0.0
-        assert client._safe_float(None, default=-1) == -1
-    
-    def test_handles_nan(self, client):
-        assert client._safe_float(float('nan')) == 0.0
-        assert client._safe_float(float('nan'), default=99) == 99
-    
-    def test_handles_float(self, client):
-        assert client._safe_float(3.14) == 3.14
-        assert client._safe_float(100.0) == 100.0
-    
-    def test_handles_int(self, client):
-        assert client._safe_float(42) == 42.0
-        assert client._safe_float(-10) == -10.0
-    
-    def test_handles_string_number(self, client):
-        # May raise or return default depending on implementation
-        try:
-            result = client._safe_float("123.45")
-            assert result == 123.45 or result == 0.0
-        except:
-            pass  # Implementation may not handle strings
-    
-    def test_handles_infinity(self, client):
-        result = client._safe_float(float('inf'))
-        assert result == float('inf') or result == 0.0
+    """Tests for safe_float utility function."""
+
+    def test_handles_none(self):
+        assert safe_float(None) == 0.0
+        assert safe_float(None, default=-1) == -1
+
+    def test_handles_nan(self):
+        assert safe_float(float('nan')) == 0.0
+        assert safe_float(float('nan'), default=99) == 99
+
+    def test_handles_float(self):
+        assert safe_float(3.14) == 3.14
+        assert safe_float(100.0) == 100.0
+
+    def test_handles_int(self):
+        assert safe_float(42) == 42.0
+        assert safe_float(-10) == -10.0
+
+    def test_handles_string_number(self):
+        assert safe_float("123.45") == 123.45
+        assert safe_float("-123.45") == -123.45
+        assert safe_float("0") == 0.0
+        assert safe_float("not_a_number") == 0.0
+        assert safe_float("not_a_number", default=-1) == -1
+
+    def test_handles_infinity(self):
+        assert safe_float(float('inf')) == 0.0
+        assert safe_float(float('-inf')) == 0.0
+        assert safe_float(float('inf'), default=999) == 999
 
 
 class TestPositionModel:
@@ -122,24 +115,24 @@ class TestIBClientConnection:
     """Tests for IBClient connection logic."""
     
     def test_uses_random_client_id_if_not_specified(self):
-        with patch('backend.ib_client.IB'):
-            with patch('backend.ib_client.random.randint', return_value=5555):
+        with patch('backend.brokers.ibkr.IB'):
+            with patch('backend.brokers.ibkr.random.randint', return_value=5555):
                 client = IBClient()
                 assert client.client_id == 5555
     
     def test_uses_specified_client_id(self):
-        with patch('backend.ib_client.IB'):
+        with patch('backend.brokers.ibkr.IB'):
             client = IBClient(client_id=1234)
             assert client.client_id == 1234
     
     def test_default_host_and_port(self):
-        with patch('backend.ib_client.IB'):
+        with patch('backend.brokers.ibkr.IB'):
             client = IBClient()
             assert client.host == '127.0.0.1'
             assert client.port == 7496
     
     def test_custom_host_and_port(self):
-        with patch('backend.ib_client.IB'):
+        with patch('backend.brokers.ibkr.IB'):
             client = IBClient(host='192.168.1.100', port=7497)
             assert client.host == '192.168.1.100'
             assert client.port == 7497
@@ -150,7 +143,7 @@ class TestIBClientMarketData:
     
     @pytest.fixture
     def connected_client(self):
-        with patch('backend.ib_client.IB') as MockIB:
+        with patch('backend.brokers.ibkr.IB') as MockIB:
             client = IBClient()
             client.connected = True
             client.ib = MockIB.return_value
@@ -173,7 +166,7 @@ class TestIBClientAccountPnL:
     
     @pytest.fixture
     def connected_client(self):
-        with patch('backend.ib_client.IB') as MockIB:
+        with patch('backend.brokers.ibkr.IB') as MockIB:
             client = IBClient()
             client.connected = True
             client.ib = MockIB.return_value
@@ -209,7 +202,7 @@ class TestPlaceOptionsOrder:
     @pytest.fixture
     def connected_client(self, mock_trade):
         """Create a connected IBClient with mocked IB."""
-        with patch('backend.ib_client.IB') as MockIB:
+        with patch('backend.brokers.ibkr.IB') as MockIB:
             client = IBClient()
             client.connected = True
             client.ib = MockIB.return_value
@@ -220,7 +213,7 @@ class TestPlaceOptionsOrder:
     @pytest.fixture
     def disconnected_client(self):
         """Create a disconnected IBClient."""
-        with patch('backend.ib_client.IB') as MockIB:
+        with patch('backend.brokers.ibkr.IB') as MockIB:
             client = IBClient()
             client.connected = False
             client.ib = MockIB.return_value
