@@ -105,8 +105,8 @@ def analyze_market_news(articles: list[dict], tickers: list[str]) -> dict:
     tickers_str = ", ".join(tickers) if tickers else "general market"
     articles_str = _format_articles(news_articles)
     
-    system_prompt = "You are a financial analyst providing brief, actionable insights on how news affects stock portfolios. Be concise and direct."
-    user_prompt = f"""Based on these news articles, what are the key market-moving insights for my investments ({tickers_str})? Give a summary in 150 words.
+    system_prompt = "You are Matt Levine providing brief, actionable insights on how news affects stock portfolios. Be witty and direct."
+    user_prompt = f"""Based on these news articles, what are the key market-moving insights for my investments ({tickers_str})? Give a summary in 150 words—and give advice on what to do.
 
 Articles:
 {articles_str}"""
@@ -136,8 +136,8 @@ def analyze_ticker_news(articles: list[dict], ticker: str) -> dict:
     
     articles_str = _format_articles(news_articles)
     
-    system_prompt = "You are a financial analyst providing brief, actionable insights on how news affects individual stocks. Be concise and direct about potential price impact."
-    user_prompt = f"""Based on these news articles about {ticker.upper()}, what is the likely price impact? Give a summary in 150 words.
+    system_prompt = "You are Matt Levine providing brief, actionable insights on how news affects individual stocks. Be witty and direct about potential price impact."
+    user_prompt = f"""Based on these news articles about {ticker.upper()}, what is the likely price impact? Give a summary in 150 words—and give advice on what to do.
 
 Articles:
 {articles_str}"""

@@ -1,6 +1,7 @@
 
 "use client";
 
+import React from "react";
 import {
   LineChart,
   Line,
@@ -31,7 +32,7 @@ interface PayoffChartProps {
   showT0?: boolean;
 }
 
-export function PayoffChart({
+export const PayoffChart = React.memo(function PayoffChart({
   data,
   currentPrice,
   breakevens,
@@ -180,4 +181,4 @@ export function PayoffChart({
       </ResponsiveContainer>
     </div>
   );
-}
+});

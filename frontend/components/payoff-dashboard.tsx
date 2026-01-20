@@ -75,10 +75,21 @@ export function PayoffDashboard() {
   const selectedAccountRef = useRef(selectedAccount);
   const selectedTickerRef = useRef<string | null>(selectedTicker);
 
+  // Track page visibility to reduce polling when app is backgrounded
+  const [isPageVisible, setIsPageVisible] = useState(true);
+
   useEffect(() => {
     isMountedRef.current = true;
+
+    const handleVisibilityChange = () => {
+      setIsPageVisible(!document.hidden);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       isMountedRef.current = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -112,8 +123,6 @@ export function PayoffDashboard() {
   const [showCombined, setShowCombined] = useState(true);
   const [showT0, setShowT0] = useState(false);
 
-  // Mobile sidebar state
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Simulation State
   const [ivAdjustment, setIvAdjustment] = useState(0); // 0 = 0% change
@@ -516,17 +525,17 @@ export function PayoffDashboard() {
     const isIntraday = chartTimeframe === '1H' || chartTimeframe === '1D';
     if (isIntraday) {
       pollInterval = setInterval(() => {
-        if (isCurrent) {
+        if (isCurrent && isPageVisible) {
           fetchChartData(false); // Don't show loading spinner for background refreshes
         }
-      }, 10000); // 10 seconds
+      }, 30000); // 30 seconds (reduced from 10s for better mobile performance)
     }
     
     return () => {
       isCurrent = false;
       if (pollInterval) clearInterval(pollInterval);
     };
-  }, [selectedTicker, chartTimeframe, isLiveMode, ibConnected, startLoadTask, completeLoadTask]);
+  }, [selectedTicker, chartTimeframe, isLiveMode, ibConnected, isPageVisible, startLoadTask, completeLoadTask]);
 
   // Fetch news when ticker changes and poll every 30 seconds
   useEffect(() => {
@@ -590,14 +599,16 @@ export function PayoffDashboard() {
     // Initial fetch
     fetchNews(!hasCached);
     
-    // Poll every 30 seconds
-    const interval = setInterval(() => fetchNews(false), 30000);
+    // Poll every 60 seconds (reduced frequency for better mobile performance)
+    const interval = setInterval(() => {
+      if (isPageVisible) fetchNews(false);
+    }, 60000);
     
     return () => {
       isCurrent = false;
       clearInterval(interval);
     };
-  }, [selectedTicker, isLiveMode, ibConnected, startLoadTask, completeLoadTask]);
+  }, [selectedTicker, isLiveMode, ibConnected, isPageVisible, startLoadTask, completeLoadTask]);
 
   // Fetch market news when Market News tab is selected - uses preloaded cache if available
   useEffect(() => {
@@ -630,11 +641,13 @@ export function PayoffDashboard() {
       fetchMarketNews(true);
     }
     
-    // Poll every 30 seconds (no spinner on refresh)
-    const interval = setInterval(() => fetchMarketNews(false), 30000);
+    // Poll every 60 seconds (reduced frequency for better mobile performance)
+    const interval = setInterval(() => {
+      if (isPageVisible) fetchMarketNews(false);
+    }, 60000);
     
     return () => clearInterval(interval);
-  }, [portfolioView, isLiveMode, ibConnected, marketNewsHeadlines.length]);
+  }, [portfolioView, isLiveMode, ibConnected, isPageVisible, marketNewsHeadlines.length]);
 
   // Auto-analyze market news when headlines change
   const lastMarketAnalysisRef = useRef<string>("");
@@ -1303,18 +1316,6 @@ export function PayoffDashboard() {
             {/* Header with TradeShape + Key Metrics inline */}
       <div className="flex items-center justify-between border-b border-white/10 pb-4 gap-2 sm:gap-4 flex-wrap">
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Hamburger menu for mobile */}
-          <button
-            onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-            className="md:hidden p-2 rounded-lg bg-slate-800 text-white hover:bg-slate-700 transition-colors"
-            aria-label="Toggle sidebar"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
-          </button>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
             Trade<span className="text-orange-500">Shape</span>
           </h1>
@@ -1516,55 +1517,55 @@ export function PayoffDashboard() {
                   <thead>
                     <tr className="border-b border-white/10 text-gray-500 text-xs uppercase tracking-wider">
                       <th 
-                        className="text-left py-2 px-2 cursor-pointer hover:text-white transition-colors"
+                        className="text-left py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors"
                         onClick={() => handleSort("ticker")}
                       >
                         Ticker {sortColumn === "ticker" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
                       <th 
-                        className="text-right py-2 px-2 cursor-pointer hover:text-white transition-colors border-l border-r border-white/10"
+                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-r border-white/10"
                         onClick={() => handleSort("underlyingPrice")}
                       >
                         Price {sortColumn === "underlyingPrice" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
                       <th 
-                        className="text-right py-2 px-2 cursor-pointer hover:text-white transition-colors border-l border-white/10"
+                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-white/10"
                         onClick={() => handleSort("unrealizedPnl")}
                       >
                         Unrealized $ {sortColumn === "unrealizedPnl" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
                       <th 
-                        className="text-right py-2 px-2 cursor-pointer hover:text-white transition-colors border-r border-white/10"
+                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-r border-white/10"
                         onClick={() => handleSort("unrealizedPnlPct")}
                       >
                         Unrealized % {sortColumn === "unrealizedPnlPct" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
                       <th 
-                        className="text-right py-2 px-2 cursor-pointer hover:text-white transition-colors border-l border-white/10"
+                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-white/10"
                         onClick={() => handleSort("dailyPnl")}
                       >
                         Today $ {sortColumn === "dailyPnl" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
                       <th 
-                        className="text-right py-2 px-2 cursor-pointer hover:text-white transition-colors border-r border-white/10"
+                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-r border-white/10"
                         onClick={() => handleSort("dailyPnlPct")}
                       >
                         Today % {sortColumn === "dailyPnlPct" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
                       <th 
-                        className="text-right py-2 px-2 cursor-pointer hover:text-white transition-colors border-l border-r border-white/10"
+                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-r border-white/10"
                         onClick={() => handleSort("marketValue")}
                       >
                         Market Value {sortColumn === "marketValue" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
                       <th 
-                        className="text-right py-2 px-2 cursor-pointer hover:text-white transition-colors"
+                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors"
                         onClick={() => handleSort("maxLoss")}
                       >
                         Max Loss {sortColumn === "maxLoss" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
                       <th 
-                        className="text-right py-2 px-2 cursor-pointer hover:text-white transition-colors"
+                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors"
                         onClick={() => handleSort("maxProfit")}
                       >
                         Max Profit {sortColumn === "maxProfit" && (sortDirection === "asc" ? "↑" : "↓")}
@@ -1577,7 +1578,7 @@ export function PayoffDashboard() {
                       tickerSummaries.map((s) => (
                         <tr 
                           key={s.ticker} 
-                          className="border-b border-white/5 hover:bg-white/5 cursor-pointer"
+                          className="border-b border-white/5 hover:bg-white/5 active:bg-white/10 cursor-pointer touch-manipulation touch-manipulation min-h-[44px]"
                           onClick={() => {
                             setSelectedTicker(s.ticker);
                             setPortfolioView("detail");
@@ -1647,7 +1648,7 @@ export function PayoffDashboard() {
                           return (
                             <tr 
                               key={`${p.ticker}-${p.position_type}-${p.strike || 0}-${p.expiry || ''}-${idx}`}
-                              className="border-b border-white/5 hover:bg-white/5 cursor-pointer"
+                              className="border-b border-white/5 hover:bg-white/5 active:bg-white/10 cursor-pointer touch-manipulation touch-manipulation min-h-[44px]"
                               onClick={() => {
                                 setSelectedTicker(p.ticker);
                                 setPortfolioView("detail");
@@ -1720,37 +1721,44 @@ export function PayoffDashboard() {
         
         {/* Portfolio Detail Tab */}
         <TabsContent value="detail" className="mt-4">
-            {/* Mobile sidebar overlay */}
-            {mobileSidebarOpen && (
-              <div 
-                className="fixed inset-0 bg-black/60 z-40 md:hidden"
-                onClick={() => setMobileSidebarOpen(false)}
-              />
-            )}
-            
+            {/* Mobile ticker selector - replaces sidebar on mobile */}
+            <div className="md:hidden mb-4">
+              <Select value={selectedTicker || ""} onValueChange={setSelectedTicker}>
+                <SelectTrigger className="w-full min-h-[44px] bg-slate-800 border-slate-700 text-white touch-manipulation">
+                  <SelectValue placeholder="Select a ticker to view details" className="text-orange-400 font-bold">
+                    {selectedTicker || "Select ticker"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="bg-slate-900 border-slate-700">
+                  {tickers.map((ticker) => {
+                    const tickerPositions = positions.filter(p => p.ticker === ticker);
+                    const totalPnl = tickerPositions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
+
+                    return (
+                      <SelectItem key={ticker} value={ticker} className="cursor-pointer touch-manipulation hover:bg-slate-800">
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-white">{ticker}</span>
+                            <span className="text-xs text-gray-400">
+                              ${stockPrices[ticker]?.toFixed(2) || '---'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 ml-4">
+                            <span className={`text-xs font-medium ${totalPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {totalPnl >= 0 ? '+' : ''}{formatCurrency(totalPnl)}
+                            </span>
+                          </div>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 flex-1 min-h-0">
-            {/* Sidebar - slide out on mobile, normal on desktop */}
-            <Card className={`
-              ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-              md:translate-x-0
-              fixed md:relative
-              left-0 top-0 md:top-auto
-              h-full md:h-auto
-              w-72 md:w-auto
-              z-50 md:z-auto
-              transition-transform duration-300 ease-in-out
-              md:col-span-1 bg-slate-950 border-white/10 text-white flex flex-col max-h-[100vh] md:max-h-[calc(100vh-180px)]
-            `}>
-               {/* Close button for mobile */}
-               <button
-                 onClick={() => setMobileSidebarOpen(false)}
-                 className="md:hidden absolute top-3 right-3 p-2 rounded-lg bg-slate-800 text-white hover:bg-slate-700"
-               >
-                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                   <line x1="18" y1="6" x2="6" y2="18" />
-                   <line x1="6" y1="6" x2="18" y2="18" />
-                 </svg>
-               </button>
+            {/* Sidebar - hidden on mobile, normal on desktop */}
+            <Card className="hidden md:flex md:col-span-1 bg-slate-950 border-white/10 text-white flex-col max-h-[calc(100vh-180px)]">
                <CardHeader className="flex-shrink-0">
                  <CardTitle className="text-gray-400 font-normal uppercase tracking-wider text-xs">Tickers</CardTitle>
                </CardHeader>
@@ -1763,15 +1771,12 @@ export function PayoffDashboard() {
                     return (
                       <div 
                         key={t} 
-                        className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                        className={`p-3 rounded-lg cursor-pointer touch-manipulation transition-colors ${
                           selectedTicker === t 
                             ? "bg-orange-500/20 border border-orange-500/50" 
                             : "bg-white/5 border border-transparent hover:bg-white/10"
                         }`}
-                        onClick={() => {
-                          setSelectedTicker(t);
-                          setMobileSidebarOpen(false); // Close sidebar on mobile
-                        }}
+                        onClick={() => setSelectedTicker(t)}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -1984,7 +1989,7 @@ export function PayoffDashboard() {
                             id="show-stock" 
                             className="data-[state=checked]:bg-slate-700"
                           />
-                          <Label htmlFor="show-stock" className="text-slate-400 cursor-pointer">Stock</Label>
+                          <Label htmlFor="show-stock" className="text-slate-400 cursor-pointer touch-manipulation">Stock</Label>
                        </div>
                        <div className="flex items-center gap-2">
                           <Switch 
@@ -1993,7 +1998,7 @@ export function PayoffDashboard() {
                             id="show-options" 
                             className="data-[state=checked]:bg-purple-600"
                           />
-                          <Label htmlFor="show-options" className="text-purple-400 cursor-pointer">Options</Label>
+                          <Label htmlFor="show-options" className="text-purple-400 cursor-pointer touch-manipulation">Options</Label>
                        </div>
                        <div className="flex items-center gap-2">
                           <Switch 
@@ -2002,7 +2007,7 @@ export function PayoffDashboard() {
                             id="show-combined" 
                             className="data-[state=checked]:bg-orange-600"
                           />
-                          <Label htmlFor="show-combined" className="font-bold text-orange-500 cursor-pointer">Combined</Label>
+                          <Label htmlFor="show-combined" className="font-bold text-orange-500 cursor-pointer touch-manipulation">Combined</Label>
                        </div>
                        <div className="pl-4 border-l border-white/10 flex items-center gap-2">
                           <Switch 
@@ -2011,7 +2016,7 @@ export function PayoffDashboard() {
                             id="show-t0" 
                             className="data-[state=checked]:bg-cyan-500"
                           />
-                          <Label htmlFor="show-t0" className="text-cyan-400 cursor-pointer">Show T+0 Prediction</Label>
+                          <Label htmlFor="show-t0" className="text-cyan-400 cursor-pointer touch-manipulation">Show T+0 Prediction</Label>
                        </div>
                     </div>
                  </CardHeader>
@@ -2512,7 +2517,7 @@ export function PayoffDashboard() {
                                           return (
                                             <>
                                               <td 
-                                                className={`text-right py-1 px-1 cursor-pointer transition-colors ${
+                                                className={`text-right py-1 px-1 cursor-pointer touch-manipulation transition-colors ${
                                                   callSellSelected ? "bg-red-500/40 ring-1 ring-red-400" : "hover:bg-red-500/30"
                                                 } ${callItm && !callSellSelected ? "bg-green-500/10" : ""}`}
                                                 onClick={() => call && toggleLegInStrategy(selectedExpiry, strike, "C", "SELL", call.mid)}
@@ -2521,7 +2526,7 @@ export function PayoffDashboard() {
                                                 {call?.bid?.toFixed(2) || "-"}
                                               </td>
                                               <td 
-                                                className={`text-right py-1 px-1 cursor-pointer transition-colors ${
+                                                className={`text-right py-1 px-1 cursor-pointer touch-manipulation transition-colors ${
                                                   callBuySelected ? "bg-green-500/40 ring-1 ring-green-400" : "hover:bg-green-500/30"
                                                 } ${callItm && !callBuySelected ? "bg-green-500/10" : ""}`}
                                                 onClick={() => call && toggleLegInStrategy(selectedExpiry, strike, "C", "BUY", call.mid)}
@@ -2554,7 +2559,7 @@ export function PayoffDashboard() {
                                           return (
                                             <>
                                               <td 
-                                                className={`text-right py-1 px-1 border-l border-white/10 cursor-pointer transition-colors ${
+                                                className={`text-right py-1 px-1 border-l border-white/10 cursor-pointer touch-manipulation transition-colors ${
                                                   putSellSelected ? "bg-red-500/40 ring-1 ring-red-400" : "hover:bg-red-500/30"
                                                 } ${putItm && !putSellSelected ? "bg-red-500/10" : ""}`}
                                                 onClick={() => put && toggleLegInStrategy(selectedExpiry, strike, "P", "SELL", put.mid)}
@@ -2563,7 +2568,7 @@ export function PayoffDashboard() {
                                                 {put?.bid?.toFixed(2) || "-"}
                                               </td>
                                               <td 
-                                                className={`text-right py-1 px-1 cursor-pointer transition-colors ${
+                                                className={`text-right py-1 px-1 cursor-pointer touch-manipulation transition-colors ${
                                                   putBuySelected ? "bg-green-500/40 ring-1 ring-green-400" : "hover:bg-green-500/30"
                                                 } ${putItm && !putBuySelected ? "bg-red-500/10" : ""}`}
                                                 onClick={() => put && toggleLegInStrategy(selectedExpiry, strike, "P", "BUY", put.mid)}
@@ -2690,7 +2695,7 @@ export function PayoffDashboard() {
                                   onCheckedChange={setShowExistingPositions}
                                   className="data-[state=checked]:bg-orange-600"
                                 />
-                                <Label className="text-xs text-gray-400 cursor-pointer">
+                                <Label className="text-xs text-gray-400 cursor-pointer touch-manipulation">
                                   Superimpose on existing {selectedTicker} positions
                                 </Label>
                               </div>

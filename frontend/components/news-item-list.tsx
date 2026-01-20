@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { NewsHeadline } from "@/lib/api-client";
 import { decodeHtmlEntities } from "@/lib/text-utils";
 import { formatRelativeTime } from "@/lib/format-utils";
@@ -19,7 +20,7 @@ interface NewsItemListProps {
   }) => void;
 }
 
-export function NewsItemList({
+export const NewsItemList = React.memo(function NewsItemList({
   headlines,
   loading,
   emptyMessage = "No news available",
@@ -196,4 +197,4 @@ export function NewsItemList({
       )}
     </div>
   );
-}
+});

@@ -18,6 +18,13 @@ export const metadata: Metadata = {
   description: "Personalized trading dashboard for Interactive Brokers",
 };
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
