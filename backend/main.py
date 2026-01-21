@@ -1,9 +1,10 @@
 import os
 import asyncio
 import nest_asyncio
+from datetime import datetime
 from contextlib import asynccontextmanager
-from typing import Optional, Literal, List
-from fastapi import FastAPI
+from typing import Optional, Literal, List, Dict, Any
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -13,13 +14,16 @@ from .llm_client import analyze_market_news, analyze_ticker_news
 from .common.models import TradeOrder
 from .common.utils import validate_symbol, format_error_response
 from .common.cache import options_cache, historical_cache, snapshot_cache
+from .config_loader import config_loader
 
 # ============================================
 # PROVIDER CONFIGURATION
 # ============================================
-DATA_PROVIDER = os.getenv("DATA_PROVIDER", "massive").lower()
-NEWS_PROVIDER = os.getenv("NEWS_PROVIDER", "massive").lower()
-BROKERAGE_PROVIDER = os.getenv("BROKERAGE_PROVIDER", "ibkr").lower()
+# Load providers from config_loader (handles both .env and credentials.json)
+providers = config_loader.get_providers()
+DATA_PROVIDER = providers.get('data', 'massive').lower()
+NEWS_PROVIDER = providers.get('news', 'massive').lower()
+BROKERAGE_PROVIDER = providers.get('brokerage', 'ibkr').lower()
 
 # Create data provider (for routes that use it directly)
 data_provider = DataProviderFactory.create(DATA_PROVIDER)
@@ -345,6 +349,123 @@ def get_cache_stats():
         "server_time": datetime.now().isoformat(),
         "market_hours_cache_ttl": options_cache.get_market_hours_ttl()
     }
+
+
+# ============================================
+# Credentials Management Endpoints
+# ============================================
+
+class TestConnectionRequest(BaseModel):
+    provider: str
+    credentials: Dict[str, Any]
+
+
+@app.get("/api/credentials/check")
+def check_credentials():
+    """Check if credentials are configured and valid."""
+    return config_loader.check_credentials()
+
+
+@app.post("/api/test-connection")
+def test_connection(request: TestConnectionRequest):
+    """Test if the provided credentials work for a specific provider."""
+    provider = request.provider
+    credentials = request.credentials
+
+    if provider == "massive":
+        api_key = credentials.get("api_key", "")
+        if not api_key or "YOUR_" in api_key:
+            return {"connected": False, "error": "Invalid API key"}
+
+        try:
+            # Try to initialize Massive client and make a simple request
+            from massive import RESTClient
+            client = RESTClient(api_key=api_key)
+            # Try to get a simple ticker detail to test the connection
+            result = client.get_ticker_details(ticker="AAPL")
+            return {"connected": True, "provider": "massive"}
+        except Exception as e:
+            return {"connected": False, "error": str(e), "provider": "massive"}
+
+    elif provider == "alpaca":
+        api_key = credentials.get("api_key", "")
+        api_secret = credentials.get("api_secret", "")
+
+        if not api_key or not api_secret or "YOUR_" in api_key:
+            return {"connected": False, "error": "Invalid API credentials"}
+
+        try:
+            from alpaca.trading.client import TradingClient
+            paper = credentials.get("paper", True)
+            client = TradingClient(api_key, api_secret, paper=paper)
+            # Try to get account info to test the connection
+            account = client.get_account()
+            return {"connected": True, "provider": "alpaca"}
+        except Exception as e:
+            return {"connected": False, "error": str(e), "provider": "alpaca"}
+
+    elif provider == "ibkr":
+        # IBKR connection check (already exists via positions endpoint)
+        try:
+            positions = config.broker.get_positions() if config.broker else []
+            return {"connected": bool(config.broker and config.broker.is_connected()), "provider": "ibkr"}
+        except:
+            return {"connected": False, "provider": "ibkr"}
+
+    return {"connected": False, "error": "Unknown provider"}
+
+
+@app.get("/api/credentials")
+def get_credentials():
+    """Get current credential configuration."""
+    config = config_loader.get_config()
+
+    # Return full configuration including credentials
+    # This is safe because it's a local application and the user owns these credentials
+    return {
+        'credentials': {
+            'providers': config.get('providers', {}),
+            'credentials': config.get('credentials', {})
+        }
+    }
+
+
+class CredentialsUpdate(BaseModel):
+    providers: Dict[str, str]
+    credentials: Dict[str, Any]
+
+
+@app.post("/api/credentials")
+def update_credentials(data: CredentialsUpdate):
+    """Update and save credentials configuration."""
+    config_data = {
+        'providers': data.providers,
+        'credentials': data.credentials
+    }
+
+    # Add existing ngrok config if not provided
+    existing_config = config_loader.get_config()
+    config_data['ngrok'] = existing_config.get('ngrok', {})
+
+    success = config_loader.save_credentials(config_data)
+
+    if success:
+        # Reload providers after saving
+        global DATA_PROVIDER, NEWS_PROVIDER, BROKERAGE_PROVIDER, data_provider, news_provider
+        providers = config_loader.get_providers()
+        DATA_PROVIDER = providers.get('data', 'massive').lower()
+        NEWS_PROVIDER = providers.get('news', 'massive').lower()
+        BROKERAGE_PROVIDER = providers.get('brokerage', 'ibkr').lower()
+
+        # Recreate providers
+        data_provider = DataProviderFactory.create(DATA_PROVIDER)
+        news_provider = DataProviderFactory.create(NEWS_PROVIDER)
+
+        print(f"Updated providers: data={DATA_PROVIDER}, news={NEWS_PROVIDER}, brokerage={BROKERAGE_PROVIDER}")
+
+        return {"success": True, "message": "Credentials updated successfully"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to save credentials")
 
 
 # ==================

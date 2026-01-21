@@ -3,18 +3,16 @@
 import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-from dotenv import load_dotenv
 from massive import RESTClient
 from .base import DataProviderInterface
 from ..common.models import HistoricalBar
 from ..common.cache import historical_cache, snapshot_cache, news_cache, options_cache
 from ..common.utils import handle_api_error, safe_float, safe_int, validate_symbol
+from ..config_loader import config_loader
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Initialize the Massive REST client with API key
-_api_key = os.getenv("MASSIVE_API_KEY")
+# Get Massive API key from config loader
+massive_creds = config_loader.get_credentials('massive') or {}
+_api_key = massive_creds.get('api_key') or os.getenv("MASSIVE_API_KEY")
 if not _api_key:
     print("WARNING: MASSIVE_API_KEY not found in environment. Historical data will not work.")
     _client: Optional[RESTClient] = None

@@ -26,6 +26,8 @@ import { CandlestickChart } from "@/components/candlestick-chart";
 import { useToast } from "@/components/ui/toast";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine } from "recharts";
 import ReactMarkdown from "react-markdown";
+import { Settings } from "lucide-react";
+import Link from "next/link";
 
 import {
   Select,
@@ -1265,8 +1267,12 @@ export function PayoffDashboard() {
                     <div className={`w-1.5 h-1.5 rounded-full ${newsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-2 sm:gap-4 sm:ml-auto flex-wrap">
+                   {/* Settings Link */}
+                   <Link href="/settings" className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                     <Settings className="h-4 w-4 text-gray-400 hover:text-white" />
+                   </Link>
                    {/* Account Selector */}
                    {accounts.length > 0 && (
                        <div className="flex items-center gap-2">

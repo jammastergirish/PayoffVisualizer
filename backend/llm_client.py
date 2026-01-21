@@ -7,13 +7,12 @@ Centralized module for making LLM calls to analyze news and provide portfolio in
 import os
 from typing import Optional
 from pydantic import BaseModel
-from dotenv import load_dotenv
 from .common.utils import format_error_response
-
-load_dotenv()
+from .config_loader import config_loader
 
 # Initialize OpenAI client
-_api_key = os.getenv("OPENAI_API_KEY")
+openai_creds = config_loader.get_credentials('openai') or {}
+_api_key = openai_creds.get('api_key') or os.getenv("OPENAI_API_KEY")
 _client = None
 
 if _api_key:

@@ -7,7 +7,7 @@ This provider uses Alpaca Markets API for:
 - Ticker details
 
 Requirements:
-- ALPACA_API_KEY and ALPACA_API_SECRET in .env
+- ALPACA_API_KEY and ALPACA_API_SECRET in credentials.json or .env
 - alpaca-py package installed
 
 Benefits over other providers:
@@ -23,6 +23,7 @@ from typing import List, Dict, Any, Optional
 from .base import DataProviderInterface
 from ..common.models import HistoricalBar
 from ..common.utils import safe_float, safe_int, handle_api_error
+from ..config_loader import config_loader
 
 # Lazy imports to avoid startup errors if alpaca-py not installed
 # Lazy imports to avoid startup errors if alpaca-py not installed
@@ -34,8 +35,9 @@ def _get_stock_client():
     if 'stock' not in _alpaca_clients:
         try:
             from alpaca.data.historical import StockHistoricalDataClient
-            api_key = os.getenv("ALPACA_API_KEY")
-            api_secret = os.getenv("ALPACA_API_SECRET")
+            alpaca_creds = config_loader.get_credentials('alpaca') or {}
+            api_key = alpaca_creds.get('api_key') or os.getenv("ALPACA_API_KEY")
+            api_secret = alpaca_creds.get('api_secret') or os.getenv("ALPACA_API_SECRET")
             if api_key and api_secret:
                 _alpaca_clients['stock'] = StockHistoricalDataClient(api_key, api_secret)
             else:
@@ -50,8 +52,9 @@ def _get_option_client():
     if 'option' not in _alpaca_clients:
         try:
             from alpaca.data.historical import OptionHistoricalDataClient
-            api_key = os.getenv("ALPACA_API_KEY")
-            api_secret = os.getenv("ALPACA_API_SECRET")
+            alpaca_creds = config_loader.get_credentials('alpaca') or {}
+            api_key = alpaca_creds.get('api_key') or os.getenv("ALPACA_API_KEY")
+            api_secret = alpaca_creds.get('api_secret') or os.getenv("ALPACA_API_SECRET")
             if api_key and api_secret:
                 _alpaca_clients['option'] = OptionHistoricalDataClient(api_key, api_secret)
             else:
@@ -66,8 +69,9 @@ def _get_news_client():
     if 'news' not in _alpaca_clients:
         try:
             from alpaca.data.historical import NewsClient
-            api_key = os.getenv("ALPACA_API_KEY")
-            api_secret = os.getenv("ALPACA_API_SECRET")
+            alpaca_creds = config_loader.get_credentials('alpaca') or {}
+            api_key = alpaca_creds.get('api_key') or os.getenv("ALPACA_API_KEY")
+            api_secret = alpaca_creds.get('api_secret') or os.getenv("ALPACA_API_SECRET")
             # NewsClient requires authentication
             if api_key and api_secret:
                 _alpaca_clients['news'] = NewsClient(api_key, api_secret)
@@ -87,9 +91,10 @@ def _get_trading_client():
     if 'trading' not in _alpaca_clients:
         try:
             from alpaca.trading.client import TradingClient
-            api_key = os.getenv("ALPACA_API_KEY")
-            api_secret = os.getenv("ALPACA_API_SECRET")
-            paper = os.getenv("ALPACA_PAPER", "true").lower() == "true"
+            alpaca_creds = config_loader.get_credentials('alpaca') or {}
+            api_key = alpaca_creds.get('api_key') or os.getenv("ALPACA_API_KEY")
+            api_secret = alpaca_creds.get('api_secret') or os.getenv("ALPACA_API_SECRET")
+            paper = alpaca_creds.get('paper', os.getenv("ALPACA_PAPER", "true").lower() == "true")
             if api_key and api_secret:
                 _alpaca_clients['trading'] = TradingClient(api_key, api_secret, paper=paper)
             else:

@@ -8,4 +8,4 @@ node_modules/
 __pycache__/
 watchlist.json
 *.pyc
-*.pyc
+credentials.json
