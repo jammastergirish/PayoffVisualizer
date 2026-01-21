@@ -1247,33 +1247,23 @@ export function PayoffDashboard() {
 
 
        {isLiveMode && (
-           <div className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-lg text-sm border bg-slate-900/50 border-white/10`}>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-400 text-xs uppercase tracking-wider">Brokerage:</span>
-                  <div className="flex items-center gap-2">
-                     <span className="font-medium text-white uppercase">{providers?.brokerage || 'Unknown'}</span>
-                     <div className={`w-2 h-2 rounded-full animate-pulse flex-shrink-0 ${ibConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+           <div className={`flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg text-sm border bg-slate-900/50 border-white/10`}>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-400 text-xs uppercase tracking-wider">Broker:</span>
+                    <span className="font-medium text-white uppercase text-xs">{providers?.brokerage || 'IBKR'}</span>
+                    <div className={`w-1.5 h-1.5 rounded-full ${ibConnected ? 'bg-green-500' : 'bg-red-500'}`} />
                   </div>
-                </div>
-
-                <div className="hidden sm:block w-px h-4 bg-white/10 mx-2"></div>
-
-                <div className="flex items-center gap-2">
-                   <span className="text-gray-400 text-xs uppercase tracking-wider">Data:</span>
-                   <div className="flex items-center gap-2">
-                      <span className="font-medium text-white uppercase">{providers?.data || 'Unknown'}</span>
-                      <div className={`w-2 h-2 rounded-full animate-pulse flex-shrink-0 ${dataConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-                   </div>
-                </div>
-
-                <div className="hidden sm:block w-px h-4 bg-white/10 mx-2"></div>
-
-                <div className="flex items-center gap-2">
-                   <span className="text-gray-400 text-xs uppercase tracking-wider">News:</span>
-                   <div className="flex items-center gap-2">
-                      <span className="font-medium text-white uppercase">{providers?.news || 'Unknown'}</span>
-                      <div className={`w-2 h-2 rounded-full animate-pulse flex-shrink-0 ${newsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-                   </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-400 text-xs uppercase tracking-wider">Data:</span>
+                    <span className="font-medium text-white uppercase text-xs">{providers?.data || 'MASSIVE'}</span>
+                    <div className={`w-1.5 h-1.5 rounded-full ${dataConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-400 text-xs uppercase tracking-wider">News:</span>
+                    <span className="font-medium text-white uppercase text-xs">{providers?.news || 'MASSIVE'}</span>
+                    <div className={`w-1.5 h-1.5 rounded-full ${newsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                  </div>
                 </div>
                 
                 <div className="flex items-center gap-2 sm:gap-4 sm:ml-auto flex-wrap">
@@ -1344,7 +1334,7 @@ export function PayoffDashboard() {
           </button>
         </div>
         
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:flex md:items-center gap-2 sm:gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
           {/* YTD % Return - calculated first for positioning */}
           {accountSummaries && (() => {
             const totalNetLiq = selectedAccount !== 'All' && accountSummaries[selectedAccount]
@@ -1513,62 +1503,62 @@ export function PayoffDashboard() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-xs sm:text-sm">
                   <thead>
                     <tr className="border-b border-white/10 text-gray-500 text-xs uppercase tracking-wider">
-                      <th 
-                        className="text-left py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors"
+                      <th
+                        className="text-left py-2 px-1 sm:px-2 cursor-pointer touch-manipulation hover:text-white transition-colors"
                         onClick={() => handleSort("ticker")}
                       >
                         Ticker {sortColumn === "ticker" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
-                      <th 
-                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-r border-white/10"
+                      <th
+                        className="text-right py-2 px-1 sm:px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-r border-white/10"
                         onClick={() => handleSort("underlyingPrice")}
                       >
                         Price {sortColumn === "underlyingPrice" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
-                      <th 
-                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-white/10"
+                      <th
+                        className="text-right py-2 px-1 sm:px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-white/10"
                         onClick={() => handleSort("unrealizedPnl")}
                       >
-                        Unrealized $ {sortColumn === "unrealizedPnl" && (sortDirection === "asc" ? "↑" : "↓")}
+                        <span className="hidden sm:inline">Unrealized $</span><span className="sm:hidden">Un $</span> {sortColumn === "unrealizedPnl" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
-                      <th 
-                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-r border-white/10"
+                      <th
+                        className="text-right py-2 px-1 sm:px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-r border-white/10"
                         onClick={() => handleSort("unrealizedPnlPct")}
                       >
-                        Unrealized % {sortColumn === "unrealizedPnlPct" && (sortDirection === "asc" ? "↑" : "↓")}
+                        <span className="hidden sm:inline">Unrealized %</span><span className="sm:hidden">Un %</span> {sortColumn === "unrealizedPnlPct" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
-                      <th 
-                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-white/10"
+                      <th
+                        className="text-right py-2 px-1 sm:px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-white/10"
                         onClick={() => handleSort("dailyPnl")}
                       >
-                        Today $ {sortColumn === "dailyPnl" && (sortDirection === "asc" ? "↑" : "↓")}
+                        <span className="hidden sm:inline">Today $</span><span className="sm:hidden">T $</span> {sortColumn === "dailyPnl" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
-                      <th 
-                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-r border-white/10"
+                      <th
+                        className="text-right py-2 px-1 sm:px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-r border-white/10"
                         onClick={() => handleSort("dailyPnlPct")}
                       >
-                        Today % {sortColumn === "dailyPnlPct" && (sortDirection === "asc" ? "↑" : "↓")}
+                        <span className="hidden sm:inline">Today %</span><span className="sm:hidden">T %</span> {sortColumn === "dailyPnlPct" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
-                      <th 
-                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-r border-white/10"
+                      <th
+                        className="text-right py-2 px-1 sm:px-2 cursor-pointer touch-manipulation hover:text-white transition-colors border-l border-r border-white/10"
                         onClick={() => handleSort("marketValue")}
                       >
-                        Market Value {sortColumn === "marketValue" && (sortDirection === "asc" ? "↑" : "↓")}
+                        <span className="hidden sm:inline">Market Value</span><span className="sm:hidden">Mkt Val</span> {sortColumn === "marketValue" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
-                      <th 
-                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors"
+                      <th
+                        className="text-right py-2 px-1 sm:px-2 cursor-pointer touch-manipulation hover:text-white transition-colors"
                         onClick={() => handleSort("maxLoss")}
                       >
-                        Max Loss {sortColumn === "maxLoss" && (sortDirection === "asc" ? "↑" : "↓")}
+                        <span className="hidden sm:inline">Max Loss</span><span className="sm:hidden">Max L</span> {sortColumn === "maxLoss" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
-                      <th 
-                        className="text-right py-2 px-2 cursor-pointer touch-manipulation hover:text-white transition-colors"
+                      <th
+                        className="text-right py-2 px-1 sm:px-2 cursor-pointer touch-manipulation hover:text-white transition-colors"
                         onClick={() => handleSort("maxProfit")}
                       >
-                        Max Profit {sortColumn === "maxProfit" && (sortDirection === "asc" ? "↑" : "↓")}
+                        <span className="hidden sm:inline">Max Profit</span><span className="sm:hidden">Max P</span> {sortColumn === "maxProfit" && (sortDirection === "asc" ? "↑" : "↓")}
                       </th>
                     </tr>
                   </thead>
@@ -1609,22 +1599,22 @@ export function PayoffDashboard() {
                           <td className={`text-right py-2 px-2 font-mono font-medium border-l border-white/10 ${s.unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {s.unrealizedPnl >= 0 ? '+' : ''}{formatPrivateCurrency(s.unrealizedPnl, privacyMode)}
                           </td>
-                          <td className={`text-right py-2 px-2 font-mono text-xs border-r border-white/10 ${s.unrealizedPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          <td className={`text-right py-2 px-1 sm:px-2 font-mono text-xs border-r border-white/10 ${s.unrealizedPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {s.unrealizedPnlPct >= 0 ? '+' : ''}{s.unrealizedPnlPct.toFixed(1)}%
                           </td>
                           <td className={`text-right py-2 px-2 font-mono font-medium border-l border-white/10 ${s.dailyPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {s.dailyPnl >= 0 ? '+' : ''}{formatPrivateCurrency(s.dailyPnl, privacyMode)}
                           </td>
-                          <td className={`text-right py-2 px-2 font-mono text-xs border-r border-white/10 ${s.dailyPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          <td className={`text-right py-2 px-1 sm:px-2 font-mono text-xs border-r border-white/10 ${s.dailyPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {s.dailyPnlPct >= 0 ? '+' : ''}{s.dailyPnlPct.toFixed(1)}%
                           </td>
-                          <td className="text-right py-2 px-2 font-mono text-gray-300 border-l border-r border-white/10">
+                          <td className="text-right py-2 px-1 sm:px-2 font-mono text-gray-300 border-l border-r border-white/10">
                             {formatPrivateCurrency(Math.abs(s.marketValue), privacyMode)}
                           </td>
-                          <td className="text-right py-2 px-2 font-mono text-red-400">
+                          <td className="text-right py-2 px-1 sm:px-2 font-mono text-red-400">
                             {Number.isFinite(s.maxLoss) ? formatPrivateCurrency(Math.abs(s.maxLoss), privacyMode) : '∞'}
                           </td>
-                          <td className="text-right py-2 px-2 font-mono text-green-400">
+                          <td className="text-right py-2 px-1 sm:px-2 font-mono text-green-400">
                             {Number.isFinite(s.maxProfit) ? formatPrivateCurrency(s.maxProfit, privacyMode) : '∞'}
                           </td>
                         </tr>
@@ -1686,22 +1676,22 @@ export function PayoffDashboard() {
                               <td className={`text-right py-2 px-2 font-mono font-medium border-l border-white/10 ${(p.unrealized_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                 {(p.unrealized_pnl || 0) >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl || 0)}
                               </td>
-                              <td className={`text-right py-2 px-2 font-mono text-xs border-r border-white/10 ${unrealizedPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              <td className={`text-right py-2 px-1 sm:px-2 font-mono text-xs border-r border-white/10 ${unrealizedPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                 {unrealizedPct >= 0 ? '+' : ''}{unrealizedPct.toFixed(1)}%
                               </td>
                               <td className={`text-right py-2 px-2 font-mono font-medium border-l border-white/10 ${(p.daily_pnl || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                 {(p.daily_pnl || 0) >= 0 ? '+' : ''}{formatCurrency(p.daily_pnl || 0)}
                               </td>
-                              <td className={`text-right py-2 px-2 font-mono text-xs border-r border-white/10 ${dailyPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              <td className={`text-right py-2 px-1 sm:px-2 font-mono text-xs border-r border-white/10 ${dailyPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                 {dailyPct >= 0 ? '+' : ''}{dailyPct.toFixed(1)}%
                               </td>
-                              <td className="text-right py-2 px-2 font-mono text-gray-300 border-l border-r border-white/10">
+                              <td className="text-right py-2 px-1 sm:px-2 font-mono text-gray-300 border-l border-r border-white/10">
                                 {formatCurrency(marketValue)}
                               </td>
-                              <td className="text-right py-2 px-2 font-mono text-gray-500">
+                              <td className="text-right py-2 px-1 sm:px-2 font-mono text-gray-500">
                                 -
                               </td>
-                              <td className="text-right py-2 px-2 font-mono text-gray-500">
+                              <td className="text-right py-2 px-1 sm:px-2 font-mono text-gray-500">
                                 -
                               </td>
                             </tr>
