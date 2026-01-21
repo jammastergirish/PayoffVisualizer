@@ -126,6 +126,11 @@ class Order:
     average_fill_price: Optional[float] = None
     time_placed: Optional[str] = None # ISO format
     account: Optional[str] = None
+    # Option details
+    asset_type: Literal["stock", "option"] = "stock"
+    strike: Optional[float] = None
+    expiry: Optional[str] = None # YYYY-MM-DD
+    option_type: Optional[Literal["call", "put"]] = None
     
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None}

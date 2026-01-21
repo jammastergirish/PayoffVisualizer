@@ -455,6 +455,11 @@ export interface Order {
     average_fill_price?: number;
     time_placed?: string;
     account?: string;
+    // Option details
+    asset_type?: "stock" | "option";
+    strike?: number;
+    expiry?: string;
+    option_type?: "call" | "put";
 }
 
 export async function fetchOrders(): Promise<{ orders: Order[], provider: string }> {

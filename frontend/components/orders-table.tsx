@@ -134,10 +134,27 @@ export function OrdersTable({ orders, isLoading, onNavigate, tickerIcons }: Orde
                 ) : "-"}
               </TableCell>
               <TableCell className="font-medium text-neutral-200">
-                <TickerDisplay 
-                  symbol={order.symbol} 
-                  iconUrl={tickerIcons[order.symbol]} 
-                />
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <TickerDisplay 
+                      symbol={order.symbol} 
+                      iconUrl={tickerIcons[order.symbol]} 
+                    />
+                    {order.asset_type === "option" && (
+                      <Badge variant="outline" className="text-xs border-neutral-700 bg-neutral-800 text-neutral-400 h-5 px-1.5 font-normal">
+                        OPT
+                      </Badge>
+                    )}
+                  </div>
+                  {order.asset_type === "option" && order.strike && order.expiry && (
+                    <div className="text-xs text-neutral-500 mt-1 flex gap-2">
+                        <span className={order.option_type === "call" ? "text-green-500/70" : "text-red-500/70"}>
+                          {order.strike} {order.option_type === "call" ? "C" : "P"}
+                        </span>
+                        <span>{order.expiry}</span>
+                    </div>
+                  )}
+                </div>
               </TableCell>
               <TableCell>
                 <span className={order.action === "BUY" ? "text-green-400" : "text-red-400"}>

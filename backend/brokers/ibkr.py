@@ -175,9 +175,13 @@ class IBClient:
             print(f"Error subscribing to P&L for {account}: {e}")
             return None
 
-    def get_positions(self) -> List[dict]:
+    def get_positions(self) -> Dict[str, Any]:
         if not self.connected:
-            return []
+            return {
+                "accounts": [],
+                "positions": [],
+                "summary": {}
+            }
 
         try:
             self._ensure_account_summary()
@@ -556,7 +560,29 @@ class IBClient:
                 
                 # Use permId as the stable ID
                 order_id = str(trade.order.permId)
-                
+
+                # Extract option details if applicable
+                asset_type = "stock"
+                strike = None
+                expiry = None
+                option_type = None
+
+                if trade.contract.secType == 'OPT':
+                    asset_type = "option"
+                    strike = trade.contract.strike
+                    option_type = "call" if trade.contract.right == 'C' else "put"
+                    
+                    # Parse expiry
+                    try:
+                        # IBKR format: YYYYMMDD
+                        if trade.contract.lastTradeDateOrContractMonth:
+                             expiry_date = datetime.strptime(trade.contract.lastTradeDateOrContractMonth[:8], '%Y%m%d')
+                             expiry = expiry_date.strftime('%Y-%m-%d')
+                        else:
+                             expiry = "?"
+                    except:
+                        expiry = trade.contract.lastTradeDateOrContractMonth
+
                 mapped_orders.append(Order(
                     order_id=order_id,
                     symbol=trade.contract.symbol,
@@ -568,7 +594,11 @@ class IBClient:
                     filled_quantity=filled_qty,
                     average_fill_price=avg_price,
                     time_placed=trade.log[-1].time.isoformat() if trade.log else datetime.now().isoformat(), # Approximate time
-                    account=trade.order.account
+                    account=trade.order.account,
+                    asset_type=asset_type,
+                    strike=strike,
+                    expiry=expiry,
+                    option_type=option_type
                 ))
             
             print(f"DEBUG: returning {len(mapped_orders)} orders from IBKR", flush=True)
