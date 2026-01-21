@@ -162,7 +162,25 @@ def place_options_trade(order: OptionsTradeOrder):
     
     return result
 
+    return result
+
+@app.get("/api/orders")
+def get_orders():
+    """
+    Get all pending and filled orders for the day from the active broker.
+    """
+    broker = config.broker
+    if not broker or not broker.is_connected():
+        return format_error_response(f"Not connected to {BROKERAGE_PROVIDER.upper()}", orders=[])
+    
+    orders = broker.get_orders()
+    # Convert dataclasses to dicts
+    orders_data = [o.to_dict() for o in orders]
+    
+    return {"orders": orders_data, "provider": BROKERAGE_PROVIDER}
+
 @app.get("/api/options-chain/{symbol}")
+
 def get_options_chain_endpoint(symbol: str, max_strikes: int = 30, force_refresh: bool = False):
     """
     Get options chain for a symbol with caching.

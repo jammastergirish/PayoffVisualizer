@@ -110,3 +110,22 @@ class OptionQuote:
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
+@dataclass
+class Order:
+    """Unified order model for any broker."""
+    order_id: str
+    symbol: str
+    action: Literal["BUY", "SELL"]
+    quantity: float
+    order_type: Literal["MARKET", "LIMIT"]
+    status: Literal["Pending", "Filled", "Cancelled", "Working", "Submitted"]
+    limit_price: Optional[float] = None
+    filled_quantity: float = 0.0
+    average_fill_price: Optional[float] = None
+    time_placed: Optional[str] = None # ISO format
+    account: Optional[str] = None
+    
+    def to_dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None}

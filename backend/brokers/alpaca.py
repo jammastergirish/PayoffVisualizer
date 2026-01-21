@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from .base import BrokerInterface
-from ..common.models import Position, AccountSummary, TradeOrder, OptionOrder
+from ..common.models import Position, AccountSummary, TradeOrder, OptionOrder, Order
 from ..common.utils import safe_float, safe_int
 
 # Lazy client initialization
@@ -163,6 +163,69 @@ class AlpacaBroker(BrokerInterface):
         except Exception as e:
             print(f"ERROR [Alpaca]: Failed to get account summary: {e}")
             return {}
+
+    def get_orders(self) -> List[Order]:
+        """Get all orders from Alpaca."""
+        client = _get_trading_client()
+        if not client:
+            return []
+
+        try:
+            from alpaca.trading.requests import GetOrdersRequest
+            from alpaca.trading.enums import QueryOrderStatus
+
+            request_params = GetOrdersRequest(
+                status=QueryOrderStatus.ALL,
+                limit=100, # Adjust as needed
+                nested=True # Return nested multi-leg orders?
+            )
+
+            alpaca_orders = client.get_orders(filter=request_params)
+            
+            result = []
+            for ao in alpaca_orders:
+                # Map status
+                status_map = {
+                    'new': 'Submitted',
+                    'partially_filled': 'Working',
+                    'filled': 'Filled',
+                    'done_for_day': 'Working',
+                    'canceled': 'Cancelled',
+                    'expired': 'Cancelled',
+                    'replaced': 'Cancelled', # Or Submitted?
+                    'pending_cancel': 'Pending',
+                    'pending_replace': 'Pending',
+                    'accepted': 'Submitted',
+                    'pending_new': 'Pending',
+                    'accepted_for_bidding': 'Submitted',
+                    'stopped': 'Cancelled',
+                    'rejected': 'Cancelled',
+                    'suspended': 'Cancelled',
+                    'calculated': 'Working'
+                }
+                
+                common_status = status_map.get(ao.status.value if hasattr(ao.status, 'value') else str(ao.status), 'Submitted') # type: ignore
+
+                result.append(Order(
+                    order_id=str(ao.id),
+                    symbol=ao.symbol,
+                    action=ao.side.value.upper() if hasattr(ao.side, 'value') else str(ao.side).upper(), # type: ignore
+                    quantity=safe_float(ao.qty), # type: ignore
+                    order_type=ao.type.value.upper() if hasattr(ao.type, 'value') else str(ao.type).upper(), # type: ignore
+                    status=common_status, # type: ignore
+                    limit_price=safe_float(ao.limit_price),
+                    filled_quantity=safe_float(ao.filled_qty),
+                    average_fill_price=safe_float(ao.filled_avg_price),
+                    time_placed=ao.created_at.isoformat() if ao.created_at else None,
+                    account=None # Alpaca usually single account per key
+                ))
+            
+            print(f"DEBUG [Alpaca]: Retrieved {len(result)} orders")
+            return result
+
+        except Exception as e:
+            print(f"ERROR [Alpaca]: Failed to get orders: {e}")
+            return []
 
     def place_stock_order(self, order: TradeOrder) -> Dict[str, Any]:
         """Place a stock order through Alpaca."""

@@ -18,10 +18,12 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { checkBackendHealth, fetchLivePortfolio, fetchHistoricalData, HistoricalBar, fetchNewsHeadlines, fetchMarketNewsHeadlines, NewsHeadline, fetchTickerDetails, TickerDetails, fetchDailySnapshot, DailySnapshot, placeTrade, TradeOrder, TradeResult, fetchOptionsChain, OptionsChain, OptionQuote, placeOptionsOrder, OptionLeg, fetchMarketNewsAnalysis, fetchTickerNewsAnalysis, LLMAnalysisResponse } from "@/lib/api-client";
+import { checkBackendHealth, fetchLivePortfolio, fetchHistoricalData, HistoricalBar, fetchNewsHeadlines, fetchMarketNewsHeadlines, NewsHeadline, fetchTickerDetails, TickerDetails, fetchDailySnapshot, DailySnapshot, placeTrade, TradeOrder, TradeResult, fetchOptionsChain, OptionsChain, OptionQuote, placeOptionsOrder, OptionLeg, fetchMarketNewsAnalysis, fetchTickerNewsAnalysis, LLMAnalysisResponse, fetchOrders, Order } from "@/lib/api-client";
 import { Input } from "@/components/ui/input";
 import { NewsModal } from "@/components/news-modal";
 import { NewsItemList } from "@/components/news-item-list";
+import { OrdersTable } from "@/components/orders-table";
+import { TickerDisplay } from "@/components/ticker-display";
 import { CandlestickChart } from "@/components/candlestick-chart";
 import { useToast } from "@/components/ui/toast";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine } from "recharts";
@@ -165,7 +167,7 @@ export function PayoffDashboard() {
   const optionsChainCacheRef = useRef<Record<string, OptionsChain>>({});
   
   // Top-level portfolio view tabs
-  const [portfolioView, setPortfolioView] = useState<"news" | "summary" | "detail">("detail");
+  const [portfolioView, setPortfolioView] = useState<"news" | "summary" | "detail" | "orders">("detail");
   
   // Market News State (separate from per-ticker news)
   const [marketNewsHeadlines, setMarketNewsHeadlines] = useState<NewsHeadline[]>([]);
@@ -180,6 +182,30 @@ export function PayoffDashboard() {
   const [tickerNewsPrompt, setTickerNewsPrompt] = useState<string>("");
   const [viewingPrompt, setViewingPrompt] = useState<string | null>(null); // Modal content
   
+  // Orders State
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+
+  // Poll orders when on orders tab
+  useEffect(() => {
+    if (!isLiveMode || !ibConnected || portfolioView !== "orders") return;
+
+    const loadOrders = async (showLoading: boolean) => {
+        if (showLoading) setOrdersLoading(true);
+        const data = await fetchOrders();
+        setOrders(data.orders);
+        if (showLoading) setOrdersLoading(false);
+    };
+
+    loadOrders(true);
+
+    const interval = setInterval(() => {
+        if (isPageVisible) loadOrders(false);
+    }, 5000); // 5 sec poll for orders
+
+    return () => clearInterval(interval);
+  }, [isLiveMode, ibConnected, portfolioView, isPageVisible]);
+
   // Portfolio Summary sort state
   type SortColumn = "ticker" | "underlyingPrice" | "unrealizedPnl" | "unrealizedPnlPct" | "dailyPnl" | "dailyPnlPct" | "marketValue" | "maxLoss" | "maxProfit";
   const [sortColumn, setSortColumn] = useState<SortColumn>("unrealizedPnl");
@@ -1439,6 +1465,7 @@ export function PayoffDashboard() {
           <TabsTrigger value="news" className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-400">Market News</TabsTrigger>
           <TabsTrigger value="summary" className="data-[state=active]:bg-white/10 data-[state=active]:text-white">Portfolio Summary</TabsTrigger>
           <TabsTrigger value="detail" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">Portfolio Detail</TabsTrigger>
+          <TabsTrigger value="orders" className="data-[state=active]:bg-indigo-500/20 data-[state=active]:text-indigo-400">Orders</TabsTrigger>
         </TabsList>
         
         {/* Market News Tab */}
@@ -1652,19 +1679,11 @@ export function PayoffDashboard() {
                             >
                               <td className="py-2 px-2">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-6 h-6 flex-shrink-0 rounded bg-white/10 overflow-hidden">
-                                    {tickerDetailsCache[p.ticker]?.branding?.icon_url ? (
-                                      <img 
-                                        src={tickerDetailsCache[p.ticker].branding!.icon_url!}
-                                        alt={p.ticker}
-                                        className="w-full h-full object-contain"
-                                      />
-                                    ) : (
-                                      <div className="w-full h-full flex items-center justify-center text-gray-600 text-[10px] font-bold">
-                                        {p.ticker.slice(0, 2)}
-                                      </div>
-                                    )}
-                                  </div>
+                                    <TickerDisplay 
+                                      symbol={p.ticker} 
+                                      iconUrl={tickerDetailsCache[p.ticker]?.branding?.icon_url} 
+                                      showSymbol={false} 
+                                    />
                                   <div className="flex flex-col">
                                     <span className="font-medium text-white">{p.ticker}</span>
                                     <span className="text-[10px] text-gray-500">
@@ -1715,6 +1734,30 @@ export function PayoffDashboard() {
           </Card>
         </TabsContent>
         
+        {/* Portfolio Detail Tab */}
+        {/* Orders Tab */}
+        <TabsContent value="orders" className="mt-4">
+          <Card className="bg-slate-950 border-white/10 text-white">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-white/5">
+              <CardTitle className="text-gray-400 font-normal uppercase tracking-wider text-xs">Today&apos;s Orders</CardTitle>
+              <Button variant="outline" size="sm" onClick={() => fetchOrders().then(d => setOrders(d.orders))} className="h-7 text-xs bg-white/5 hover:bg-white/10 border-white/10 text-gray-300">
+                Refresh
+              </Button>
+            </CardHeader>
+            <CardContent className="pt-4">
+               <OrdersTable 
+                 orders={orders} 
+                 isLoading={ordersLoading} 
+                 onNavigate={(symbol) => {
+                   setSelectedTicker(symbol);
+                   setPortfolioView("detail");
+                 }}
+                 tickerIcons={Object.fromEntries(Object.entries(tickerDetailsCache).map(([k, v]) => [k, v?.branding?.icon_url]))}
+               />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Portfolio Detail Tab */}
         <TabsContent value="detail" className="mt-4">
             {/* Mobile ticker selector - replaces sidebar on mobile */}

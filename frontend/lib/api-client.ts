@@ -438,3 +438,32 @@ export async function fetchTickerNewsAnalysis(
         return { error: e instanceof Error ? e.message : "Failed to analyze news" };
     }
 }
+
+// ==================
+// Orders API
+// ==================
+
+export interface Order {
+    order_id: string;
+    symbol: string;
+    action: "BUY" | "SELL";
+    quantity: number;
+    order_type: "MARKET" | "LIMIT";
+    status: "Pending" | "Filled" | "Cancelled" | "Working" | "Submitted";
+    limit_price?: number;
+    filled_quantity: number;
+    average_fill_price?: number;
+    time_placed?: string;
+    account?: string;
+}
+
+export async function fetchOrders(): Promise<{ orders: Order[], provider: string }> {
+    try {
+        const res = await fetch(`${API_BASE}/api/orders`);
+        if (!res.ok) throw new Error("Failed to fetch orders");
+        return await res.json();
+    } catch (e) {
+        console.error(e);
+        return { orders: [], provider: "unknown" };
+    }
+}

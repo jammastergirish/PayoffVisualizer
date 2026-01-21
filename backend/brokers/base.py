@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
-from ..common.models import Position, AccountSummary, TradeOrder, OptionOrder
+from ..common.models import Position, AccountSummary, TradeOrder, OptionOrder, Order
 
 
 class BrokerInterface(ABC):
@@ -31,6 +31,11 @@ class BrokerInterface(ABC):
     @abstractmethod
     def get_account_summary(self) -> Dict[str, AccountSummary]:
         """Get account summary information."""
+        pass
+
+    @abstractmethod
+    def get_orders(self) -> List[Order]:
+        """Get list of orders (pending and filled for the day)."""
         pass
 
     @abstractmethod

@@ -9,8 +9,9 @@ from ib_insync import IB, Stock, Option, MarketOrder, LimitOrder, util
 import math
 import nest_asyncio
 import random
+import time
 from .base import BrokerInterface
-from ..common.models import Position, AccountSummary, TradeOrder, OptionOrder
+from ..common.models import Position, AccountSummary, TradeOrder, OptionOrder, Order
 from ..common.utils import safe_float, safe_int, format_error_response, format_success_response, validate_symbol
 
 # Apply nest_asyncio to allow nested loops if needed, though threading should isolate it
@@ -458,6 +459,7 @@ class IBClient:
                 "positions": mapped_positions,
                 "summary": accounts_summary
             }
+
         except Exception as e:
             print(f"Error fetching positions: {e}")
             import traceback
@@ -467,6 +469,116 @@ class IBClient:
                 "positions": [],
                 "summary": {}
             }
+
+    def get_orders(self) -> List[Order]:
+        """Get all open orders and today's executions."""
+        if not self.connected:
+            return []
+
+        try:
+            # Refresh open orders and executions safely
+            # We must schedule these calls on the IB loop thread
+            if self._loop and self._loop.is_running():
+                from ib_insync import ExecutionFilter
+                self._loop.call_soon_threadsafe(self.ib.reqAllOpenOrders)
+                self._loop.call_soon_threadsafe(self.ib.reqExecutions, ExecutionFilter())
+            
+            time.sleep(1.0) # Increased wait time slightly
+
+            open_orders = self.ib.orders()
+            trades = self.ib.trades()
+            fills = self.ib.fills()
+            
+            print(f"DEBUG: ib_insync state - OpenOrders: {len(open_orders)}, Trades: {len(trades)}, Fills: {len(fills)}", flush=True)
+
+            # Debug raw trades to see why quantity might be 0 or missing
+            if trades:
+                print(f"DEBUG: Sample Trade 0: {trades[0]}", flush=True)
+            if fills:
+                print(f"DEBUG: Sample Fill 0: {fills[0]}", flush=True)
+            
+            mapped_orders = []
+            seen_perm_ids = set()
+
+            # Process Trades (which cover most active/recent orders)
+            for trade in trades:
+                # Use permId for uniqueness since orderId can be 0 for external orders
+                if trade.order.permId in seen_perm_ids:
+                    continue
+                seen_perm_ids.add(trade.order.permId)
+                
+                # Determine Status
+                # trade.orderStatus.status is one of: PendingSubmit, PendingCancel, PreSubmitted, Submitted, ApiCancelled, Cancelled, Filled, Inactive
+                status = trade.orderStatus.status
+                # Map to our common statuses: Pending, Filled, Cancelled, Working, Submitted
+                if status in ('PendingSubmit', 'PreSubmitted', 'Submitted'):
+                    common_status = "Submitted"
+                elif status == 'filled': # capitalization varies? ib_insync uses 'Filled' usually
+                    common_status = "Filled"
+                elif status in ('PendingCancel', 'ApiCancelled', 'Cancelled'):
+                    common_status = "Cancelled"
+                elif status == 'Inactive':
+                    common_status = "Cancelled"
+                else:
+                    common_status = status # Fallback
+
+                # Calculate filled quantity and avg price
+                filled_qty = trade.orderStatus.filled
+                avg_price = trade.orderStatus.avgFillPrice
+
+                # Fallback: If orderStatus has 0 filled but there are fills in the list, calculate from fills
+                # This often happens for external orders (orderId=0)
+                if filled_qty == 0 and trade.fills:
+                    filled_qty = sum(f.execution.shares for f in trade.fills)
+                    if filled_qty > 0:
+                        total_cost = sum(f.execution.shares * f.execution.price for f in trade.fills)
+                        avg_price = total_cost / filled_qty
+
+                # Handling quantity: trade.order.totalQuantity might be 0 for some combo orders or if not populated
+                # Fallback to filled + remaining if totalQuantity is 0
+                quantity = trade.order.totalQuantity
+                if quantity == 0:
+                    quantity = filled_qty + trade.orderStatus.remaining
+
+                # Determine Display Price
+                # LMT: lmtPrice
+                # STP / TRAIL: auxPrice
+                limit_price = None
+                order_type = trade.order.orderType.upper() if trade.order.orderType else "MARKET"
+                
+                if order_type == 'LMT':
+                    limit_price = trade.order.lmtPrice
+                elif order_type in ('STP', 'TRAIL', 'REL', 'LMT+MKT'):
+                    # For STP/TRAIL, auxPrice is the stop price or trailing amount
+                    limit_price = trade.order.auxPrice
+                elif order_type == 'STP LMT':
+                    limit_price = trade.order.lmtPrice # Could also show auxPrice?
+                
+                # Use permId as the stable ID
+                order_id = str(trade.order.permId)
+                
+                mapped_orders.append(Order(
+                    order_id=order_id,
+                    symbol=trade.contract.symbol,
+                    action=trade.order.action.upper(), # type: ignore
+                    quantity=quantity,
+                    order_type=order_type, # type: ignore
+                    status=common_status, # type: ignore
+                    limit_price=limit_price,
+                    filled_quantity=filled_qty,
+                    average_fill_price=avg_price,
+                    time_placed=trade.log[-1].time.isoformat() if trade.log else datetime.now().isoformat(), # Approximate time
+                    account=trade.order.account
+                ))
+            
+            print(f"DEBUG: returning {len(mapped_orders)} orders from IBKR", flush=True)
+            return mapped_orders
+
+        except Exception as e:
+            print(f"Error fetching orders: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     # NOTE: Historical price data has been moved to massive_client.py
     # NOTE: News has been moved to massive_client.py (Benzinga API)
@@ -785,6 +897,12 @@ class IBKRBroker(BrokerInterface):
             result[account_id] = summary
 
         return result
+
+    def get_orders(self) -> List[Order]:
+        """Get all orders from IBKR."""
+        if not self.is_connected():
+            return []
+        return self.client.get_orders()
 
     def place_stock_order(self, order: TradeOrder) -> Dict[str, Any]:
         """Place a stock order through IBKR."""
