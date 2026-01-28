@@ -44,6 +44,8 @@ import { formatCurrency, formatCurrencyOrInfinity, formatPercent, formatPrivateC
 import { formatDate, formatDateTime } from "@/lib/date-utils";
 import { decodeHtmlEntities, stripHtmlTags } from "@/lib/text-utils";
 import { getStrikeQuote, formatExpiry, expiryWithoutDashes } from "@/lib/options-utils";
+import { OptionsStrategyControls } from "@/components/options-strategy-controls";
+import { findMatchingTicker, scrollToTicker } from "@/lib/search-utils";
 
 async function runWithConcurrency<T>(
   items: T[],
@@ -2595,6 +2597,28 @@ export function PayoffDashboard() {
                           <div className="text-gray-500">Loading options chain...</div>
                         </div>
                       )}
+
+                      {optionsChain && (
+                        <OptionsStrategyControls
+                          ticker={selectedTicker || ""}
+                          currentPrice={currentPrice}
+                          positions={positions}
+                          optionsChain={optionsChain}
+                          onUpdateLegs={(legs) => {
+                             // Only update if legs changed meaningfully to avoid loops?
+                             // JSON.stringify comparison is cheap enough for this size
+                             const currentJson = JSON.stringify(selectedLegs.map(l => ({s: l.strike, r: l.right, a: l.action, quantity: l.quantity, e: l.expiry})));
+                             const newJson = JSON.stringify(legs.map(l => ({s: l.strike, r: l.right, a: l.action, quantity: l.quantity, e: l.expiry})));
+                             if (currentJson !== newJson) {
+                               setSelectedLegs(legs);
+                               // Also sync the expiry tab to the one selected by strategy?
+                               if (legs.length > 0 && legs[0].expiry !== selectedExpiry) {
+                                 setSelectedExpiry(legs[0].expiry);
+                               }
+                             }
+                          }}
+                        />
+                      )}
                       
                       {optionsChain && optionsChain.expirations.length > 0 && (
                         <div className="space-y-4">
@@ -2625,23 +2649,31 @@ export function PayoffDashboard() {
                             <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
                               <table className="w-full text-xs">
                                 <thead className="sticky top-0 bg-slate-950">
-                                  <tr className="border-b border-white/10">
-                                    <th colSpan={5} className="text-center text-green-400 py-2 border-r border-white/10">CALLS</th>
+                                    <tr className="border-b border-white/10">
+                                    <th colSpan={9} className="text-center text-green-400 py-2 border-r border-white/10">CALLS</th>
                                     <th className="text-center text-white py-2 px-2">Strike</th>
-                                    <th colSpan={5} className="text-center text-red-400 py-2 border-l border-white/10">PUTS</th>
+                                    <th colSpan={9} className="text-center text-red-400 py-2 border-l border-white/10">PUTS</th>
                                   </tr>
                                   <tr className="border-b border-white/10 text-gray-500">
                                     <th className="text-right py-1 px-1">Bid</th>
                                     <th className="text-right py-1 px-1">Ask</th>
                                     <th className="text-right py-1 px-1">Last</th>
                                     <th className="text-right py-1 px-1">Vol</th>
-                                    <th className="text-right py-1 px-1 border-r border-white/10">IV%</th>
+                                    <th className="text-right py-1 px-1">IV%</th>
+                                    <th className="text-right py-1 px-1 text-xs">Δ</th>
+                                    <th className="text-right py-1 px-1 text-xs">Γ</th>
+                                    <th className="text-right py-1 px-1 text-xs">Θ</th>
+                                    <th className="text-right py-1 px-1 text-xs border-r border-white/10">ν</th>
                                     <th className="text-center py-1 px-2"></th>
                                     <th className="text-right py-1 px-1 border-l border-white/10">Bid</th>
                                     <th className="text-right py-1 px-1">Ask</th>
                                     <th className="text-right py-1 px-1">Last</th>
                                     <th className="text-right py-1 px-1">Vol</th>
                                     <th className="text-right py-1 px-1">IV%</th>
+                                    <th className="text-right py-1 px-1 text-xs">Δ</th>
+                                    <th className="text-right py-1 px-1 text-xs">Γ</th>
+                                    <th className="text-right py-1 px-1 text-xs">Θ</th>
+                                    <th className="text-right py-1 px-1 text-xs">ν</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -2690,8 +2722,20 @@ export function PayoffDashboard() {
                                         <td className={`text-right py-1 px-1 text-gray-500 ${callItm ? "bg-green-500/10" : ""}`}>
                                           {call?.volume || "-"}
                                         </td>
-                                        <td className={`text-right py-1 px-1 text-gray-500 border-r border-white/10 ${callItm ? "bg-green-500/10" : ""}`}>
+                                        <td className={`text-right py-1 px-1 text-gray-500 ${callItm ? "bg-green-500/10" : ""}`}>
                                           {call?.iv?.toFixed(1) || "-"}
+                                        </td>
+                                        <td className={`text-right py-1 px-1 text-gray-400 font-mono text-[10px] ${callItm ? "bg-green-500/10" : ""}`}>
+                                          {call?.delta?.toFixed(3) || "-"}
+                                        </td>
+                                        <td className={`text-right py-1 px-1 text-gray-400 font-mono text-[10px] ${callItm ? "bg-green-500/10" : ""}`}>
+                                          {call?.gamma?.toFixed(3) || "-"}
+                                        </td>
+                                        <td className={`text-right py-1 px-1 text-gray-400 font-mono text-[10px] ${callItm ? "bg-green-500/10" : ""}`}>
+                                          {call?.theta?.toFixed(3) || "-"}
+                                        </td>
+                                        <td className={`text-right py-1 px-1 text-gray-400 font-mono text-[10px] border-r border-white/10 ${callItm ? "bg-green-500/10" : ""}`}>
+                                          {call?.vega?.toFixed(3) || "-"}
                                         </td>
                                         
                                         {/* Strike */}
@@ -2734,6 +2778,18 @@ export function PayoffDashboard() {
                                         </td>
                                         <td className={`text-right py-1 px-1 text-gray-500 ${putItm ? "bg-red-500/10" : ""}`}>
                                           {put?.iv?.toFixed(1) || "-"}
+                                        </td>
+                                        <td className={`text-right py-1 px-1 text-gray-400 font-mono text-[10px] ${putItm ? "bg-red-500/10" : ""}`}>
+                                          {put?.delta?.toFixed(3) || "-"}
+                                        </td>
+                                        <td className={`text-right py-1 px-1 text-gray-400 font-mono text-[10px] ${putItm ? "bg-red-500/10" : ""}`}>
+                                          {put?.gamma?.toFixed(3) || "-"}
+                                        </td>
+                                        <td className={`text-right py-1 px-1 text-gray-400 font-mono text-[10px] ${putItm ? "bg-red-500/10" : ""}`}>
+                                          {put?.theta?.toFixed(3) || "-"}
+                                        </td>
+                                        <td className={`text-right py-1 px-1 text-gray-400 font-mono text-[10px] ${putItm ? "bg-red-500/10" : ""}`}>
+                                          {put?.vega?.toFixed(3) || "-"}
                                         </td>
                                       </tr>
                                     );

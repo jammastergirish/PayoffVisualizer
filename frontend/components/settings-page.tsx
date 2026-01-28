@@ -130,7 +130,7 @@ export default function SettingsPage({ isOnboarding = false }: { isOnboarding?: 
   };
 
   const testConnection = async (provider: string) => {
-    const creds = credentials.credentials[provider];
+    const creds = credentials.credentials[provider as keyof typeof credentials.credentials];
     if (!creds) return;
 
     try {
