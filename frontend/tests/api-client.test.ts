@@ -1,8 +1,9 @@
 /**
- * Tests for API client functions - daily snapshot.
+ * Tests for API client functions.
  * 
  * Tests cover:
  * - fetchDailySnapshot: Get price and daily change
+ * - placeTrade: Placing various types of orders
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -12,9 +13,9 @@ const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 // Import after mocking
-import { fetchDailySnapshot } from '../lib/api-client';
+import { fetchDailySnapshot, placeTrade, type TradeOrder } from '../lib/api-client';
 
-describe('Daily Snapshot API', () => {
+describe('API Client', () => {
   beforeEach(() => {
     mockFetch.mockClear();
   });
@@ -72,6 +73,74 @@ describe('Daily Snapshot API', () => {
 
       expect(result?.change).toBe(-5.00);
       expect(result?.change_pct).toBe(-2.50);
+    });
+  });
+
+  describe('placeTrade', () => {
+    it('should place a market order', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ success: true, order_id: 123 }),
+        });
+
+        const order: TradeOrder = {
+            symbol: 'AAPL',
+            action: 'BUY',
+            quantity: 10,
+            order_type: 'MARKET',
+            tif: 'DAY'
+        };
+
+        const result = await placeTrade(order);
+
+        expect(result.success).toBe(true);
+        expect(mockFetch).toHaveBeenCalledWith('/api/trade', expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify(order)
+        }));
+    });
+
+    it('should place a trailing stop order', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ success: true, order_id: 456 }),
+        });
+
+        const order: TradeOrder = {
+            symbol: 'TSLA',
+            action: 'SELL',
+            quantity: 5,
+            order_type: 'TRAIL',
+            trailing_amount: 2.50,
+            tif: 'GTC'
+        };
+
+        const result = await placeTrade(order);
+
+        expect(result.success).toBe(true);
+        expect(mockFetch).toHaveBeenCalledWith('/api/trade', expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify(order)
+        }));
+    });
+
+    it('should handle API logic errors', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ success: false, error: 'Insufficient funds' }),
+        });
+
+        const order: TradeOrder = {
+            symbol: 'AAPL',
+            action: 'BUY',
+            quantity: 1000,
+            order_type: 'MARKET'
+        };
+
+        const result = await placeTrade(order);
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBe('Insufficient funds');
     });
   });
 });

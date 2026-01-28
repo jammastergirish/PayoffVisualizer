@@ -262,8 +262,11 @@ export interface TradeOrder {
     symbol: string;
     action: "BUY" | "SELL";
     quantity: number;
-    order_type: "MARKET" | "LIMIT";
+    order_type: "MARKET" | "LIMIT" | "TRAIL";
     limit_price?: number;
+    trailing_amount?: number;
+    trailing_percent?: number;
+    tif?: "DAY" | "GTC";
 }
 
 export interface TradeResult {

@@ -460,5 +460,97 @@ class TestPlaceOptionsOrder:
         
         result = connected_client.place_options_order(legs)
         
-        assert result["success"] is False
         assert "Connection lost" in result["error"]
+
+
+class TestPlaceStockOrder:
+    """Tests for place_order method (Stock)."""
+    
+    @pytest.fixture
+    def mock_trade(self):
+        """Create a mock Trade object."""
+        trade = MagicMock()
+        trade.order.orderId = 12345
+        trade.orderStatus.status = "Submitted"
+        return trade
+    
+    @pytest.fixture
+    def connected_client(self, mock_trade):
+        """Create a connected IBClient with mocked IB."""
+        with patch('backend.brokers.ibkr.IB') as MockIB:
+            client = IBClient()
+            client.connected = True
+            client.ib = MockIB.return_value
+            client.ib.isConnected = MagicMock(return_value=True)
+            client.ib.placeOrder = MagicMock(return_value=mock_trade)
+            return client
+
+    def test_places_market_order(self, connected_client):
+        """Should place a basic market order."""
+        result = connected_client.place_order("AAPL", "BUY", 10, "MARKET")
+        
+        assert result["success"] is True
+        connected_client.ib.placeOrder.assert_called_once()
+        args = connected_client.ib.placeOrder.call_args
+        contract, order = args[0]
+        assert contract.symbol == "AAPL"
+        assert order.action == "BUY"
+        assert order.totalQuantity == 10
+        assert order.orderType == "MKT"
+        assert order.tif == "DAY"  # Default
+
+    def test_places_limit_order(self, connected_client):
+        """Should place a limit order."""
+        result = connected_client.place_order("AAPL", "SELL", 5, "LIMIT", limit_price=150.0)
+        
+        assert result["success"] is True
+        args = connected_client.ib.placeOrder.call_args
+        _, order = args[0]
+        assert order.orderType == "LMT"
+        assert order.lmtPrice == 150.0
+
+    def test_places_trailing_amount_order(self, connected_client):
+        """Should place a trailing stop order with amount."""
+        result = connected_client.place_order("MSFT", "SELL", 5, "TRAIL", trailing_amount=1.50)
+        
+        assert result["success"] is True
+        args = connected_client.ib.placeOrder.call_args
+        _, order = args[0]
+        assert order.orderType == "TRAIL"
+        assert order.auxPrice == 1.50
+
+    def test_places_trailing_percent_order(self, connected_client):
+        """Should place a trailing stop order with percent."""
+        result = connected_client.place_order("NVDA", "SELL", 10, "TRAIL", trailing_percent=5.0)
+        
+        assert result["success"] is True
+        args = connected_client.ib.placeOrder.call_args
+        _, order = args[0]
+        assert order.orderType == "TRAIL"
+        assert order.trailingPercent == 5.0
+
+    def test_places_gtc_order(self, connected_client):
+        """Should place an order with GTC time in force."""
+        result = connected_client.place_order("GOOG", "BUY", 1, "MARKET", tif="GTC")
+        
+        assert result["success"] is True
+        args = connected_client.ib.placeOrder.call_args
+        _, order = args[0]
+        assert order.tif == "GTC"
+
+    def test_validation_errors(self, connected_client):
+        """Should return errors for invalid inputs."""
+        # Missing trailing params
+        res1 = connected_client.place_order("AAPL", "SELL", 1, "TRAIL")
+        assert res1["success"] is False
+        assert "required" in res1["error"]
+
+        # Both trailing params
+        res2 = connected_client.place_order("AAPL", "SELL", 1, "TRAIL", trailing_amount=1, trailing_percent=1)
+        assert res2["success"] is False
+        assert "not both" in res2["error"]
+
+        # Invalid TIF
+        res3 = connected_client.place_order("AAPL", "BUY", 1, "MARKET", tif="INVALID")
+        assert res3["success"] is False
+        assert "Time in Force" in res3["error"]

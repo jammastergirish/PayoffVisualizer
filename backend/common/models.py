@@ -53,8 +53,11 @@ class TradeOrder(BaseModel):
     symbol: str
     action: Literal["BUY", "SELL"]
     quantity: int
-    order_type: Literal["MARKET", "LIMIT"]
+    order_type: Literal["MARKET", "LIMIT", "TRAIL"]
     limit_price: Optional[float] = None
+    trailing_amount: Optional[float] = None
+    trailing_percent: Optional[float] = None
+    tif: Literal["DAY", "GTC"] = "DAY"
     account: Optional[str] = None
 
 

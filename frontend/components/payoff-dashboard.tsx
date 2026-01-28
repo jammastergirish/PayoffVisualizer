@@ -154,8 +154,11 @@ export function PayoffDashboard() {
   // Trade Form State
   const [tradeAction, setTradeAction] = useState<"BUY" | "SELL">("BUY");
   const [tradeQuantity, setTradeQuantity] = useState<number>(1);
-  const [tradeOrderType, setTradeOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
+  const [tradeOrderType, setTradeOrderType] = useState<"MARKET" | "LIMIT" | "TRAIL">("MARKET");
   const [tradeLimitPrice, setTradeLimitPrice] = useState<string>("");
+  const [tradeTrailType, setTradeTrailType] = useState<"AMOUNT" | "PERCENT">("AMOUNT");
+  const [tradeTrailValue, setTradeTrailValue] = useState<string>("");
+  const [tradeTif, setTradeTif] = useState<"DAY" | "GTC">("DAY");
   const [tradeSubmitting, setTradeSubmitting] = useState(false);
   const { showToast } = useToast();
 
@@ -2348,10 +2351,10 @@ export function PayoffDashboard() {
                           {/* Order Type Toggle */}
                           <div>
                             <div className="text-sm text-gray-500 uppercase tracking-wider mb-2">Order Type</div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-3 gap-2">
                               <button
                                 onClick={() => setTradeOrderType("MARKET")}
-                                className={`py-2 px-4 rounded-lg font-medium transition-all ${
+                                className={`py-2 px-2 text-sm rounded-lg font-medium transition-all ${
                                   tradeOrderType === "MARKET"
                                     ? "bg-orange-500 text-white"
                                     : "bg-white/5 text-gray-400 hover:bg-white/10"
@@ -2361,13 +2364,50 @@ export function PayoffDashboard() {
                               </button>
                               <button
                                 onClick={() => setTradeOrderType("LIMIT")}
-                                className={`py-2 px-4 rounded-lg font-medium transition-all ${
+                                className={`py-2 px-2 text-sm rounded-lg font-medium transition-all ${
                                   tradeOrderType === "LIMIT"
                                     ? "bg-orange-500 text-white"
                                     : "bg-white/5 text-gray-400 hover:bg-white/10"
                                 }`}
                               >
                                 Limit
+                              </button>
+                              <button
+                                onClick={() => setTradeOrderType("TRAIL")}
+                                className={`py-2 px-2 text-sm rounded-lg font-medium transition-all ${
+                                  tradeOrderType === "TRAIL"
+                                    ? "bg-orange-500 text-white"
+                                    : "bg-white/5 text-gray-400 hover:bg-white/10"
+                                }`}
+                              >
+                                Trailing
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Time in Force Toggle */}
+                          <div>
+                            <div className="text-sm text-gray-500 uppercase tracking-wider mb-2">Duration</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => setTradeTif("DAY")}
+                                className={`py-2 px-4 rounded-lg font-medium transition-all ${
+                                  tradeTif === "DAY"
+                                    ? "bg-blue-500 text-white"
+                                    : "bg-white/5 text-gray-400 hover:bg-white/10"
+                                }`}
+                              >
+                                Day
+                              </button>
+                              <button
+                                onClick={() => setTradeTif("GTC")}
+                                className={`py-2 px-4 rounded-lg font-medium transition-all ${
+                                  tradeTif === "GTC"
+                                    ? "bg-blue-500 text-white"
+                                    : "bg-white/5 text-gray-400 hover:bg-white/10"
+                                }`}
+                              >
+                                GTC
                               </button>
                             </div>
                           </div>
@@ -2391,13 +2431,53 @@ export function PayoffDashboard() {
                             </div>
                           )}
 
+                          {/* Trailing Stop Inputs */}
+                          {tradeOrderType === "TRAIL" && (
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="text-sm text-gray-500 uppercase tracking-wider">Trailing Amount</div>
+                                <div className="flex bg-white/5 rounded p-0.5">
+                                  <button 
+                                    className={`px-2 py-0.5 text-xs rounded ${tradeTrailType === "AMOUNT" ? "bg-orange-500 text-white" : "text-gray-400"}`}
+                                    onClick={() => setTradeTrailType("AMOUNT")}
+                                  >
+                                    $
+                                  </button>
+                                  <button 
+                                    className={`px-2 py-0.5 text-xs rounded ${tradeTrailType === "PERCENT" ? "bg-orange-500 text-white" : "text-gray-400"}`}
+                                    onClick={() => setTradeTrailType("PERCENT")}
+                                  >
+                                    %
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="relative">
+                                {tradeTrailType === "AMOUNT" && (
+                                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl">$</span>
+                                )}
+                                {tradeTrailType === "PERCENT" && (
+                                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-xl">%</span>
+                                )}
+                                <Input
+                                  type="number"
+                                  step={tradeTrailType === "AMOUNT" ? "0.01" : "0.1"}
+                                  min={0.01}
+                                  value={tradeTrailValue}
+                                  onChange={(e) => setTradeTrailValue(e.target.value)}
+                                  placeholder={tradeTrailType === "AMOUNT" ? "1.00" : "5.0"}
+                                  className={`bg-white/5 border-white/10 text-white text-center text-2xl font-mono h-14 ${tradeTrailType === "AMOUNT" ? "pl-10" : "pr-10"}`}
+                                />
+                              </div>
+                            </div>
+                          )}
+
                           {/* Order Summary */}
                           <div className="p-4 bg-white/5 rounded-lg border border-white/10">
                             <div className="text-sm text-gray-500 uppercase tracking-wider mb-2">Order Summary</div>
                             <div className={`text-lg font-medium ${
                               tradeAction === "BUY" ? "text-green-400" : "text-red-400"
                             }`}>
-                              {tradeAction} {tradeQuantity} {selectedTicker || "---"} @ {tradeOrderType}
+                              {tradeAction} {tradeQuantity} {selectedTicker || "---"} @ {tradeOrderType} ({tradeTif})
                               {tradeOrderType === "LIMIT" && tradeLimitPrice && ` $${parseFloat(tradeLimitPrice).toFixed(2)}`}
                             </div>
                             {tradeOrderType === "MARKET" && currentPrice > 0 && (
@@ -2424,6 +2504,9 @@ export function PayoffDashboard() {
                                 quantity: tradeQuantity,
                                 order_type: tradeOrderType,
                                 limit_price: tradeOrderType === "LIMIT" ? parseFloat(tradeLimitPrice) : undefined,
+                                trailing_amount: tradeOrderType === "TRAIL" && tradeTrailType === "AMOUNT" ? parseFloat(tradeTrailValue) : undefined,
+                                trailing_percent: tradeOrderType === "TRAIL" && tradeTrailType === "PERCENT" ? parseFloat(tradeTrailValue) : undefined,
+                                tif: tradeTif,
                               };
                               
                               const result = await placeTrade(order);

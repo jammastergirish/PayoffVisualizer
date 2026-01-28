@@ -628,7 +628,13 @@ class IBClient:
     # - Positions, P&L, Greeks
     # - Real-time market data subscriptions
 
-    def place_order(self, symbol: str, action: str, quantity: int, order_type: str, limit_price: Optional[float] = None) -> dict:
+
+
+    def place_order(self, symbol: str, action: str, quantity: int, order_type: str, 
+                    limit_price: Optional[float] = None, 
+                    trailing_amount: Optional[float] = None,
+                    trailing_percent: Optional[float] = None,
+                    tif: str = "DAY") -> dict:
         """
         Place a stock order through IBKR.
 
@@ -636,8 +642,11 @@ class IBClient:
             symbol: Stock ticker (e.g., "AAPL")
             action: "BUY" or "SELL"
             quantity: Number of shares (integer)
-            order_type: "MARKET" or "LIMIT"
+            order_type: "MARKET", "LIMIT", or "TRAIL"
             limit_price: Required for LIMIT orders
+            trailing_amount: Trailing amount in $ (for TRAIL orders)
+            trailing_percent: Trailing amount in % (for TRAIL orders)
+            tif: Time in Force ("DAY" or "GTC")
 
         Returns:
             dict with success status, order_id, and message/error
@@ -651,11 +660,21 @@ class IBClient:
             return format_error_response("Action must be BUY or SELL", success=False)
 
         order_type = order_type.upper()
-        if order_type not in ("MARKET", "LIMIT"):
-            return format_error_response("Order type must be MARKET or LIMIT", success=False)
+        if order_type not in ("MARKET", "LIMIT", "TRAIL"):
+            return format_error_response("Order type must be MARKET, LIMIT, or TRAIL", success=False)
 
         if order_type == "LIMIT" and (limit_price is None or limit_price <= 0):
             return format_error_response("Limit price required for LIMIT orders", success=False)
+            
+        if order_type == "TRAIL":
+            if not trailing_amount and not trailing_percent:
+                return format_error_response("Trailing amount ($) or percent (%) required for TRAIL orders", success=False)
+            if trailing_amount and trailing_percent:
+                return format_error_response("Specify either Trailing Amount ($) OR Percent (%), not both", success=False)
+
+        tif = tif.upper()
+        if tif not in ("DAY", "GTC"):
+             return format_error_response("Time in Force must be DAY or GTC", success=False)
 
         if quantity <= 0:
             return format_error_response("Quantity must be positive", success=False)
@@ -668,8 +687,21 @@ class IBClient:
             # Create order
             if order_type == "MARKET":
                 order = MarketOrder(action, quantity)
-            else:
+            elif order_type == "LIMIT":
                 order = LimitOrder(action, quantity, limit_price)
+            elif order_type == "TRAIL":
+                from ib_insync import Order as IBOrder
+                order = IBOrder()
+                order.action = action
+                order.totalQuantity = quantity
+                order.orderType = "TRAIL"
+                if trailing_amount:
+                   order.auxPrice = trailing_amount
+                elif trailing_percent:
+                   order.trailingPercent = trailing_percent
+            
+            # Set Time in Force
+            order.tif = tif
 
             # Place the order - this is non-blocking, returns Trade object immediately
             trade = self.ib.placeOrder(contract, order)
@@ -956,7 +988,10 @@ class IBKRBroker(BrokerInterface):
             action=order.action,
             quantity=order.quantity,
             order_type=order.order_type,
-            limit_price=order.limit_price
+            limit_price=order.limit_price,
+            trailing_amount=order.trailing_amount,
+            trailing_percent=order.trailing_percent,
+            tif=order.tif
         )
 
         return result
