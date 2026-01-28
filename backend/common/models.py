@@ -131,6 +131,7 @@ class Order:
     strike: Optional[float] = None
     expiry: Optional[str] = None # YYYY-MM-DD
     option_type: Optional[Literal["call", "put"]] = None
+    stop_price: Optional[float] = None
     
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v is not None}

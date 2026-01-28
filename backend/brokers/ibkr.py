@@ -544,20 +544,6 @@ class IBClient:
                 if quantity == 0:
                     quantity = filled_qty + trade.orderStatus.remaining
 
-                # Determine Display Price
-                # LMT: lmtPrice
-                # STP / TRAIL: auxPrice
-                limit_price = None
-                order_type = trade.order.orderType.upper() if trade.order.orderType else "MARKET"
-                
-                if order_type == 'LMT':
-                    limit_price = trade.order.lmtPrice
-                elif order_type in ('STP', 'TRAIL', 'REL', 'LMT+MKT'):
-                    # For STP/TRAIL, auxPrice is the stop price or trailing amount
-                    limit_price = trade.order.auxPrice
-                elif order_type == 'STP LMT':
-                    limit_price = trade.order.lmtPrice # Could also show auxPrice?
-                
                 # Use permId as the stable ID
                 order_id = str(trade.order.permId)
 
@@ -566,7 +552,32 @@ class IBClient:
                 strike = None
                 expiry = None
                 option_type = None
+                stop_price = None
 
+                # Determine Prices (Limit vs Stop)
+                # LMT: lmtPrice
+                # STP: auxPrice is stop_price
+                # STP LMT: lmtPrice is limit, auxPrice is stop_price
+                # TRAIL: trailStopPrice is current stop (if active), auxPrice is trailing amount
+                
+                order_type = trade.order.orderType.upper() if trade.order.orderType else "MARKET"
+                limit_price = None
+
+                if order_type == 'LMT':
+                    limit_price = trade.order.lmtPrice
+                elif order_type == 'STP':
+                    limit_price = None
+                    stop_price = trade.order.auxPrice
+                elif order_type == 'STP LMT':
+                    limit_price = trade.order.lmtPrice
+                    stop_price = trade.order.auxPrice
+                elif order_type == 'TRAIL':
+                    limit_price = None # Market order when triggered
+                    # trailStopPrice is the calculated current stop price
+                    stop_price = trade.order.trailStopPrice
+                elif order_type == 'REL': # PEG TO PRIMARY
+                    limit_price = None # Dynamic
+                    
                 if trade.contract.secType == 'OPT':
                     asset_type = "option"
                     strike = trade.contract.strike
@@ -591,6 +602,7 @@ class IBClient:
                     order_type=order_type, # type: ignore
                     status=common_status, # type: ignore
                     limit_price=limit_price,
+                    stop_price=stop_price,
                     filled_quantity=filled_qty,
                     average_fill_price=avg_price,
                     time_placed=trade.log[-1].time.isoformat() if trade.log else datetime.now().isoformat(), # Approximate time

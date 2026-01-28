@@ -186,25 +186,7 @@ export function PayoffDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
 
-  // Poll orders when on orders tab
-  useEffect(() => {
-    if (!isLiveMode || !ibConnected || portfolioView !== "orders") return;
 
-    const loadOrders = async (showLoading: boolean) => {
-        if (showLoading) setOrdersLoading(true);
-        const data = await fetchOrders();
-        setOrders(data.orders);
-        if (showLoading) setOrdersLoading(false);
-    };
-
-    loadOrders(true);
-
-    const interval = setInterval(() => {
-        if (isPageVisible) loadOrders(false);
-    }, 5000); // 5 sec poll for orders
-
-    return () => clearInterval(interval);
-  }, [isLiveMode, ibConnected, portfolioView, isPageVisible]);
 
   // Portfolio Summary sort state
   type SortColumn = "ticker" | "underlyingPrice" | "unrealizedPnl" | "unrealizedPnlPct" | "dailyPnl" | "dailyPnlPct" | "marketValue" | "maxLoss" | "maxProfit";
@@ -486,6 +468,37 @@ export function PayoffDashboard() {
       currentLoadingItem: currentItem,
     };
   }, [loadTasks]);
+
+  // Poll orders on connect and every 5 seconds
+  useEffect(() => {
+    if (!isLiveMode || !ibConnected) return;
+
+    if (orders.length === 0) {
+      registerLoadTasks(["orders:all"]);
+      startLoadTask("orders:all");
+    }
+
+    const loadOrders = async (showLoading: boolean) => {
+        try {
+            const data = await fetchOrders();
+            setOrders(data.orders);
+        } catch (e) {
+            console.error("Failed to load orders:", e);
+        } finally {
+            if (showLoading) {
+                completeLoadTask("orders:all");
+            }
+        }
+    };
+
+    loadOrders(true);
+
+    const interval = setInterval(() => {
+        if (isPageVisible) loadOrders(false);
+    }, 5000); 
+
+    return () => clearInterval(interval);
+  }, [isLiveMode, ibConnected, isPageVisible, registerLoadTasks, startLoadTask, completeLoadTask]);
 
   const targetDate = useMemo(() => {
     const d = new Date();
@@ -1960,6 +1973,8 @@ export function PayoffDashboard() {
                           data={priceChartData} 
                           livePrice={currentPrice}
                           timeframe={chartTimeframe}
+                          orders={selectedTicker ? orders.filter(o => o.symbol === selectedTicker) : []}
+                          positions={selectedTicker ? positions.filter(p => p.ticker === selectedTicker) : []}
                         />
                       )}
                     </CardContent>

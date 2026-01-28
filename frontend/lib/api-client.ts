@@ -460,6 +460,7 @@ export interface Order {
     strike?: number;
     expiry?: string;
     option_type?: "call" | "put";
+    stop_price?: number;
 }
 
 export async function fetchOrders(): Promise<{ orders: Order[], provider: string }> {
