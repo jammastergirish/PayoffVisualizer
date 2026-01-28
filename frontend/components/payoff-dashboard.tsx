@@ -160,6 +160,7 @@ export function PayoffDashboard() {
   const [tradeTrailValue, setTradeTrailValue] = useState<string>("");
   const [tradeTif, setTradeTif] = useState<"DAY" | "GTC">("DAY");
   const [tradeSubmitting, setTradeSubmitting] = useState(false);
+  const [tickerSearch, setTickerSearch] = useState("");
   const { showToast } = useToast();
 
   // Options Chain State
@@ -241,6 +242,16 @@ export function PayoffDashboard() {
   const [optionsOrderType, setOptionsOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
   const [optionsLimitPrice, setOptionsLimitPrice] = useState<string>("");
   const [optionsOrderSubmitting, setOptionsOrderSubmitting] = useState(false);
+
+  // Helper to handle ticker search and scroll
+  const handleTickerSearch = (value: string) => {
+    setTickerSearch(value);
+    
+    const match = findMatchingTicker(tickers, value);
+    if (match) {
+      scrollToTicker(match);
+    }
+  };
 
   // Helper to toggle a leg in the strategy
   const toggleLegInStrategy = (expiry: string, strike: number, right: "C" | "P", action: "BUY" | "SELL", mid: number) => {
@@ -1811,10 +1822,18 @@ export function PayoffDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 flex-1 min-h-0">
             {/* Sidebar - hidden on mobile, normal on desktop */}
             <Card className="hidden md:flex md:col-span-1 bg-slate-950 border-white/10 text-white flex-col max-h-[calc(100vh-180px)]">
-               <CardHeader className="flex-shrink-0">
-                 <CardTitle className="text-gray-400 font-normal uppercase tracking-wider text-xs">Tickers</CardTitle>
+               <CardHeader className="flex-shrink-0 pb-2">
+                 <div className="flex items-center justify-between mb-2">
+                   <CardTitle className="text-gray-400 font-normal uppercase tracking-wider text-xs">Tickers</CardTitle>
+                 </div>
+                 <Input 
+                   placeholder="Find ticker..." 
+                   value={tickerSearch}
+                   onChange={(e) => handleTickerSearch(e.target.value)}
+                   className="bg-white/5 border-white/10 text-white h-8 text-xs"
+                 />
                </CardHeader>
-               <CardContent className="flex flex-col gap-2 overflow-y-auto flex-1">
+               <CardContent className="flex flex-col gap-2 overflow-y-auto flex-1 pt-0">
                   {tickers.map(t => {
                     const pnl = perTickerPnl[t] || { unrealized: 0, daily: 0, stockQty: 0, optionCount: 0 };
                     const hasStock = pnl.stockQty !== 0;
@@ -1822,7 +1841,8 @@ export function PayoffDashboard() {
                     
                     return (
                       <div 
-                        key={t} 
+                        key={t}
+                        id={`ticker-list-item-${t}`} 
                         className={`p-3 rounded-lg cursor-pointer touch-manipulation transition-colors ${
                           selectedTicker === t 
                             ? "bg-orange-500/20 border border-orange-500/50" 
