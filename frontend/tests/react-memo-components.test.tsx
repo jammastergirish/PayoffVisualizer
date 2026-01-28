@@ -26,6 +26,7 @@ describe('React.memo Performance Optimizations', () => {
         { price: 120, pnl: 500 }
       ],
       currentPrice: 110,
+      privacyMode: false,
 
       showStock: true,
       showOptions: true,

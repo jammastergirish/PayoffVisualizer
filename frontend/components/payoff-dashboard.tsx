@@ -2122,7 +2122,7 @@ export function PayoffDashboard() {
                     <PayoffChart 
                        data={chartData.data} 
                        currentPrice={currentPrice}
-
+                       privacyMode={privacyMode}
                        showStock={showStock}
                        showOptions={showOptions}
                        showCombined={showCombined}

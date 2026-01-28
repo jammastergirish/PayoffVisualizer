@@ -25,6 +25,7 @@ interface ChartDataPoint {
 interface PayoffChartProps {
   data: ChartDataPoint[];
   currentPrice: number;
+  privacyMode: boolean;
 
   showStock: boolean;
   showOptions: boolean;
@@ -35,6 +36,7 @@ interface PayoffChartProps {
 export const PayoffChart = React.memo(function PayoffChart({
   data,
   currentPrice,
+  privacyMode,
 
   showStock,
   showOptions,
@@ -42,6 +44,7 @@ export const PayoffChart = React.memo(function PayoffChart({
   showT0,
 }: PayoffChartProps) {
   const currencyFormatter = (value: number) => {
+    if (privacyMode) return "****";
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
