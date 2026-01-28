@@ -279,31 +279,7 @@ export function calculateTheoreticalPnl(
     return totalPnl;
 }
 
-export function getBreakevens(prices: number[], pnl: number[]): number[] {
-    if (prices.length !== pnl.length) return [];
-    
-    const breakevens = new Set<number>();
-    
-    for (let i = 0; i < pnl.length - 1; i++) {
-        const v1 = pnl[i];
-        const v2 = pnl[i+1];
-        const p1 = prices[i];
-        const p2 = prices[i+1];
 
-        if (v1 === 0 && v2 !== 0) breakevens.add(p1);
-        if (v2 === 0 && v1 !== 0) breakevens.add(p2);
-        
-        // Check for sign change
-        if ((v1 > 0 && v2 < 0) || (v1 < 0 && v2 > 0)) {
-            if (v1 === v2) continue; // Avoid division by zero
-            
-            // Linear interpolation: x = x1 + (0 - y1) * (x2 - x1) / (y2 - y1)
-            const zeroPrice = p1 + (0 - v1) * (p2 - p1) / (v2 - v1);
-            breakevens.add(zeroPrice);
-        }
-    }
-    return Array.from(breakevens).sort((a, b) => a - b);
-}
 
 export function analyzeRiskReward(pnl: number[]) {
     // Warning: this assumes the pnl array covers a sufficient range

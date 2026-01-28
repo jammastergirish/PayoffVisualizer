@@ -25,7 +25,7 @@ interface ChartDataPoint {
 interface PayoffChartProps {
   data: ChartDataPoint[];
   currentPrice: number;
-  breakevens: number[];
+
   showStock: boolean;
   showOptions: boolean;
   showCombined: boolean;
@@ -35,7 +35,7 @@ interface PayoffChartProps {
 export const PayoffChart = React.memo(function PayoffChart({
   data,
   currentPrice,
-  breakevens,
+
   showStock,
   showOptions,
   showCombined,
@@ -116,15 +116,7 @@ export const PayoffChart = React.memo(function PayoffChart({
             label={{ value: `Current: ${priceFormatter(currentPrice)}`, position: "top", fill: "#fff", fontSize: 12 }} 
           />
           
-          {breakevens.map((be, idx) => (
-             <ReferenceLine 
-                key={idx} 
-                x={be} 
-                stroke="#fff" 
-                strokeDasharray="3 3" 
-                label={{ value: `Breakeven: ${priceFormatter(be)}`, position: "insideTopRight", fill: "#ccc", fontSize: 10 }}
-             />
-          ))}
+
 
           {showStock && (
             <Line

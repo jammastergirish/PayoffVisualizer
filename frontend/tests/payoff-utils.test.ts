@@ -7,7 +7,7 @@ import {
   calculatePnl,
   cleanNumber,
   findColumn,
-  getBreakevens,
+
   getPriceRange,
   parseFinancialInstrument,
   parsePositionsFromRows,
@@ -94,19 +94,7 @@ describe("analyzeRiskReward", () => {
   });
 });
 
-describe("getBreakevens", () => {
-  it("finds sign-change breakevens via interpolation", () => {
-    const prices = [90, 100];
-    const pnl = [-10, 10];
-    expect(getBreakevens(prices, pnl)[0]).toBeCloseTo(95);
-  });
 
-  it("includes exact zero-touch breakevens", () => {
-    const prices = [90, 100, 110];
-    const pnl = [-10, 0, 10];
-    expect(getBreakevens(prices, pnl)).toEqual([100]);
-  });
-});
 
 describe("getPriceRange", () => {
   it("returns 200 points for stock-only positions", () => {
@@ -261,13 +249,8 @@ describe("CSV integration pipeline", () => {
     const currentPrice = prices.ACME;
     const range = getPriceRange(positions, currentPrice);
     const pnl = calculatePnl(positions, range);
-    const breakevens = getBreakevens(range, pnl);
     const stats = calculateMaxRiskReward(positions);
 
-    expect(range).toHaveLength(200);
-    expect(pnl).toHaveLength(200);
-    expect(breakevens).toHaveLength(1);
-    expect(breakevens[0]).toBeCloseTo(101, 1);
     expect(stats.maxProfit).toBe(Infinity);
     expect(stats.maxLoss).toBeCloseTo(-10200);
   });

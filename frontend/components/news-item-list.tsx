@@ -198,3 +198,5 @@ export const NewsItemList = React.memo(function NewsItemList({
     </div>
   );
 });
+
+NewsItemList.displayName = "NewsItemList";

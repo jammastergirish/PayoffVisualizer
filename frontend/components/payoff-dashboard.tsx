@@ -5,7 +5,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   Position,
   calculatePnl,
-  getBreakevens,
+
   calculateMaxRiskReward,
   getPriceRange,
   calculateTheoreticalPnl
@@ -1144,7 +1144,7 @@ export function PayoffDashboard() {
   // Calculate payoff data for strategy builder chart
   const strategyPayoffData = useMemo(() => {
     if (selectedLegs.length === 0 || !optionsChain) {
-      return { data: [], maxProfit: 0, maxLoss: 0, breakevens: [] as number[] };
+      return { data: [], maxProfit: 0, maxLoss: 0 };
     }
 
     const strategyPositions = legsToPositions(selectedLegs);
@@ -1176,7 +1176,6 @@ export function PayoffDashboard() {
 
     // Calculate max profit/loss from strategy alone
     const stats = calculateMaxRiskReward(strategyPositions);
-    const breakevens = getBreakevens(prices, strategyPnl);
 
     const data = prices.map((price, idx) => ({
       price,
@@ -1188,13 +1187,12 @@ export function PayoffDashboard() {
       data,
       maxProfit: stats.maxProfit,
       maxLoss: stats.maxLoss,
-      breakevens,
       currentPrice
     };
   }, [selectedLegs, optionsChain, showExistingPositions, activePositions, selectedTicker, stockPrices, legsToPositions]);
 
   const chartData = useMemo(() => {
-    if (!selectedTicker || activePositions.length === 0) return { data: [], breakevens: [], stats: null };
+    if (!selectedTicker || activePositions.length === 0) return { data: [], stats: null };
 
     const currentPrice = stockPrices[selectedTicker] || 100;
     const prices = getPriceRange(activePositions, currentPrice);
@@ -1210,7 +1208,6 @@ export function PayoffDashboard() {
     const stockPnlArr = stockPos.length > 0 ? calculatePnl(stockPos, prices) : undefined;
     const optionsPnlArr = optionPos.length > 0 ? calculatePnl(optionPos, prices) : undefined;
 
-    const breakevens = getBreakevens(prices, pnl);
     const stats = calculateMaxRiskReward(activePositions);
 
     // Calculate T+0 P&L if enabled
@@ -1227,7 +1224,7 @@ export function PayoffDashboard() {
         t0Pnl: t0Pnl ? t0Pnl[idx] : undefined,
     }));
 
-    return { data, breakevens, stats };
+    return { data, stats };
   }, [selectedTicker, activePositions, stockPrices, showT0, ivAdjustment, targetDate]);
 
   const currentPrice = selectedTicker ? (stockPrices[selectedTicker] || 0) : 0;
@@ -2125,7 +2122,7 @@ export function PayoffDashboard() {
                     <PayoffChart 
                        data={chartData.data} 
                        currentPrice={currentPrice}
-                       breakevens={chartData.breakevens}
+
                        showStock={showStock}
                        showOptions={showOptions}
                        showCombined={showCombined}
@@ -2190,14 +2187,7 @@ export function PayoffDashboard() {
                                 }
                             </p>
                         </div>
-                        <div className="p-4 rounded-lg bg-white/5 border border-white/10">
-                            <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Breakevens</p>
-                            <p className="text-2xl font-light text-white mt-1">
-                                {chartData.breakevens.length > 0 
-                                  ? chartData.breakevens.map(b => `$${b.toFixed(0)}`).join(", ") 
-                                  : "None"}
-                            </p>
-                        </div>
+
                         <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/30">
                             <p className="text-xs text-blue-400 font-medium uppercase tracking-wider">Unrealized P&L</p>
                             <p className={`text-2xl font-light mt-1 ${totalUnrealizedPnl >= 0 ? "text-blue-300" : "text-red-300"}`}>
@@ -2829,14 +2819,7 @@ export function PayoffDashboard() {
                                     : "∞"}
                                 </p>
                               </div>
-                              <div className="p-2 rounded bg-white/5 border border-white/10 text-center">
-                                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Breakeven</p>
-                                <p className="text-sm font-medium text-white">
-                                  {strategyPayoffData.breakevens.length > 0
-                                    ? strategyPayoffData.breakevens.slice(0, 2).map(b => `$${b.toFixed(0)}`).join(", ")
-                                    : "N/A"}
-                                </p>
-                              </div>
+
                             </div>
                           </div>
                         )}
