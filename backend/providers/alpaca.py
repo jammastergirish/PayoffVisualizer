@@ -106,11 +106,11 @@ def _get_trading_client():
 
 # Timeframe mapping
 TIMEFRAME_MAP = {
-    "1Y": {"days": 365, "timeframe": "Day"},
-    "1M": {"days": 30, "timeframe": "Day"},
-    "1W": {"days": 7, "timeframe": "Hour"},
-    "1D": {"days": 1, "timeframe": "Hour"},
-    "1H": {"days": 1, "timeframe": "Minute"},
+    "1Y": {"days": 365, "unit": "Day", "amount": 1},
+    "1M": {"days": 30, "unit": "Day", "amount": 1}, 
+    "1W": {"days": 7, "unit": "Hour", "amount": 1},
+    "1D": {"days": 1, "unit": "Minute", "amount": 5},   # 5-min bars for 1 day
+    "1H": {"hours": 1, "unit": "Minute", "amount": 1},  # 1-min bars for 1 hour
 }
 
 
@@ -139,19 +139,31 @@ def get_historical_bars(symbol: str, timeframe: str = "1M") -> dict:
 
     try:
         from alpaca.data.requests import StockBarsRequest
-        from alpaca.data.timeframe import TimeFrame
+        from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
         config = TIMEFRAME_MAP.get(timeframe.upper(), TIMEFRAME_MAP["1M"])
         end = datetime.now()
-        start = end - timedelta(days=config["days"])
+        
+        # Calculate start time based on days or hours
+        if "hours" in config:
+            start = end - timedelta(hours=config["hours"])
+        else:
+            start = end - timedelta(days=config["days"])
 
-        # Map timeframe string to TimeFrame enum
-        tf_map = {
-            "Day": TimeFrame.Day,
-            "Hour": TimeFrame.Hour,
-            "Minute": TimeFrame.Minute,
+        # Map string unit to TimeFrameUnit enum
+        unit_map = {
+            "Day": TimeFrameUnit.Day,
+            "Hour": TimeFrameUnit.Hour,
+            "Minute": TimeFrameUnit.Minute,
+            "Month": TimeFrameUnit.Month,
+            "Week": TimeFrameUnit.Week
         }
-        tf = tf_map.get(config["timeframe"], TimeFrame.Day)
+        
+        tf_unit = unit_map.get(config["unit"], TimeFrameUnit.Day)
+        tf_amount = config.get("amount", 1)
+        
+        # Create TimeFrame object (amount, unit)
+        tf = TimeFrame(tf_amount, tf_unit)
 
         request = StockBarsRequest(
             symbol_or_symbols=symbol,

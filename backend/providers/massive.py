@@ -60,17 +60,22 @@ def get_historical_bars(symbol: str, timeframe: str = "1M") -> dict:
     else:
         from_date = now - timedelta(days=config["days_back"])
 
-    # Format dates for Massive API (YYYY-MM-DD or millisecond timestamp)
-    from_str = from_date.strftime("%Y-%m-%d")
-    to_str = now.strftime("%Y-%m-%d")
+    # Format dates for Massive API
+    # Use timestamps for intraday precision, strings for daily+
+    if config["timespan"] in ["minute", "hour"]:
+        from_val = int(from_date.timestamp() * 1000)
+        to_val = int(now.timestamp() * 1000)
+    else:
+        from_val = from_date.strftime("%Y-%m-%d")
+        to_val = now.strftime("%Y-%m-%d")
 
     # Call Massive.com Aggregates (Bars) API
     aggs = _client.get_aggs(
         ticker=symbol,
         multiplier=config["multiplier"],
         timespan=config["timespan"],
-        from_=from_str,
-        to=to_str,
+        from_=from_val,
+        to=to_val,
         adjusted=True,
         sort="asc",
         limit=50000
