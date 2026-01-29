@@ -15,6 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Position } from "@/lib/payoff-utils";
 import { OptionsChain, OptionLeg, OptionQuote } from "@/lib/api-client";
 import { formatExpiry } from "@/lib/options-utils";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 
 interface OptionsStrategyControlsProps {
   ticker: string;
@@ -33,7 +34,9 @@ export function OptionsStrategyControls({
 }: OptionsStrategyControlsProps) {
   const [strategy, setStrategy] = useState<
     "none" | "protective-put" | "bear-put" | "covered-call" | 
-    "collar" | "iron-condor" | "bull-call-spread" | "straddle-strangle" | "cash-secured-put"
+    "collar" | "iron-condor" | "bull-call-spread" | "straddle-strangle" | "cash-secured-put" |
+    "bull-put-spread" | "bear-call-spread" | "iron-butterfly" |
+    "calendar-call" | "calendar-put"
   >("none");
   
   // Strategy Parameters
@@ -163,6 +166,30 @@ export function OptionsStrategyControls({
             sellLeg(sellStrike, "C");
         }
 
+    } else if (strategy === "bull-put-spread") {
+        // Credit Spread: Sell Put (Higher/ATM), Buy Put (Lower/OTM)
+        // Sell @ Delta (or ATMish)
+        const putDelta = targetDelta; // e.g. 0.30
+        const shortStrike = findStrikeByDelta(strikes, chainPuts, putDelta); // Sell this
+        
+        // Buy Lower
+        const targetLong = shortStrike * (1 - strategyWidth / 100);
+        const longStrike = findClosestStrike(strikes, targetLong);
+        
+        sellLeg(shortStrike, "P", 1);
+        buyLeg(longStrike, "P", 1);
+
+    } else if (strategy === "bear-call-spread") {
+        // Credit Spread: Sell Call (Lower/ATM), Buy Call (Higher/OTM)
+        const shortStrike = findStrikeByDelta(strikes, chainCalls, targetDelta);
+        
+        // Buy Higher
+        const targetLong = shortStrike * (1 + strategyWidth / 100);
+        const longStrike = findClosestStrike(strikes, targetLong);
+
+        sellLeg(shortStrike, "C", 1);
+        buyLeg(longStrike, "C", 1);
+
     } else if (strategy === "straddle-strangle") {
         // Buy Call + Buy Put
         // Center: Closest to price
@@ -198,6 +225,42 @@ export function OptionsStrategyControls({
              sellLeg(shortCallStrike, "C", 1);
              buyLeg(longCallStrike, "C", 1);
         }
+        
+    } else if (strategy === "iron-butterfly") {
+        // Sell ATM Straddle, Buy OTM Wings
+        const atmStrike = findClosestStrike(strikes, currentPrice);
+        
+        const wingDistPct = strategyWidth / 100;
+        const upperTarget = atmStrike * (1 + wingDistPct);
+        const lowerTarget = atmStrike * (1 - wingDistPct);
+        
+        const upperStrike = findClosestStrike(strikes, upperTarget);
+        const lowerStrike = findClosestStrike(strikes, lowerTarget);
+        
+        // Sell Straddle
+        sellLeg(atmStrike, "C", 1);
+        sellLeg(atmStrike, "P", 1);
+        
+        // Buy Wings
+        buyLeg(upperStrike, "C", 1);
+        buyLeg(lowerStrike, "P", 1);
+        
+    } else if (strategy === "calendar-call" || strategy === "calendar-put") {
+        // Horizontal Spread: Sell Near, Buy Far
+        // Target ATM Strike
+        const atmStrike = findClosestStrike(strikes, currentPrice);
+        
+        const nextExpiry = expirations[expiryIndex + 1];
+        
+        if (atmStrike && nextExpiry) {
+            const right = strategy === "calendar-call" ? "C" : "P";
+            
+            // Sell Near (Selected Expiry)
+            legs.push({ symbol: ticker, expiry: selectedExpiry, strike: atmStrike, right: right, action: "SELL", quantity: contractQty });
+            
+            // Buy Far (Next Expiry)
+            legs.push({ symbol: ticker, expiry: nextExpiry, strike: atmStrike, right: right, action: "BUY", quantity: contractQty });
+        }
     }
 
     onUpdateLegs(legs);
@@ -206,6 +269,8 @@ export function OptionsStrategyControls({
 
 
   if (!optionsChain) return null;
+
+  const tabClass = "h-full whitespace-normal text-center px-4 py-2 hover:bg-slate-800 hover:text-white transition-all cursor-pointer border-transparent hover:border-white/10";
 
   return (
     <Card className="bg-slate-900 border-white/10 mb-4">
@@ -221,19 +286,140 @@ export function OptionsStrategyControls({
                 </span>
             </div>
 
+            <TooltipProvider>
             <Tabs value={strategy} onValueChange={(v: any) => setStrategy(v)} className="w-full">
-                <TabsList className="bg-slate-950 border border-white/10 w-full justify-start overflow-x-auto h-auto flex-wrap gap-y-1">
-                    <TabsTrigger value="none">Custom</TabsTrigger>
-                    <TabsTrigger value="protective-put">Prot Put</TabsTrigger>
-                    <TabsTrigger value="bear-put">Bear Put</TabsTrigger>
-                    <TabsTrigger value="covered-call">Cov Call</TabsTrigger>
-                    <TabsTrigger value="collar">Collar</TabsTrigger>
-                    <TabsTrigger value="cash-secured-put">Cash Put</TabsTrigger>
-                    <TabsTrigger value="bull-call-spread">Bull Spread</TabsTrigger>
-                    <TabsTrigger value="iron-condor">Iron Condor</TabsTrigger>
-                    <TabsTrigger value="straddle-strangle">Straddle</TabsTrigger>
-                </TabsList>
+                
+                <div className="flex flex-col gap-3">
+                    {/* Custom */}
+                    <TabsList className="bg-slate-950 border border-white/10 w-full justify-start overflow-x-auto h-auto p-1">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <TabsTrigger value="none" className={tabClass}>Custom</TabsTrigger>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Manual strategy builder. No presets.</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TabsList>
+
+                    {/* Hedging & Protection */}
+                    <div className="space-y-1">
+                        <Label className="text-[10px] text-gray-500 uppercase tracking-wider pl-1">Hedging & Income</Label>
+                        <TabsList className="bg-slate-950 border border-white/10 w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 p-1">
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="protective-put" className={tabClass}>Protective Put</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Long stock + Long Put. Limits downside risk.</p></TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="covered-call" className={tabClass}>Covered Call</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Long stock + Short Call. Income generation, caps upside.</p></TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="collar" className={tabClass}>Collar</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Protective Put financed by Covered Call. Low cost protection.</p></TooltipContent>
+                            </Tooltip>
+                              
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="cash-secured-put" className={tabClass}>Cash Secured Put</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Sell Put to buy stock at lower price or earn premium.</p></TooltipContent>
+                            </Tooltip>
+                        </TabsList>
+                    </div>
+
+                    {/* Vertical Spreads */}
+                    <div className="space-y-1">
+                         <Label className="text-[10px] text-gray-500 uppercase tracking-wider pl-1">Vertical Spreads</Label>
+                         <TabsList className="bg-slate-950 border border-white/10 w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 p-1">
+                             <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="bull-call-spread" className={tabClass}>Bull Call Spread</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Bullish (Debit). Buy Low Call, Sell High Call.</p></TooltipContent>
+                            </Tooltip>
+                            
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="bull-put-spread" className={tabClass}>Bull Put Spread</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Bullish (Credit). Sell High Put, Buy Low Put.</p></TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="bear-put" className={tabClass}>Bear Put Spread</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Bearish (Debit). Buy High Put, Sell Low Put.</p></TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="bear-call-spread" className={tabClass}>Bear Call Spread</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Bearish (Credit). Sell Low Call, Buy High Call.</p></TooltipContent>
+                            </Tooltip>
+                         </TabsList>
+                    </div>
+
+                    {/* Horizontal / Time Spreads */}
+                    <div className="space-y-1">
+                         <Label className="text-[10px] text-gray-500 uppercase tracking-wider pl-1">Horizontal Spreads</Label>
+                         <TabsList className="bg-slate-950 border border-white/10 w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 p-1">
+                             <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="calendar-call" className={tabClass}>Calendar Call</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Long Volatility. Sell Near Call, Buy Far Call (Same Strike).</p></TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="calendar-put" className={tabClass}>Calendar Put</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Long Volatility. Sell Near Put, Buy Far Put (Same Strike).</p></TooltipContent>
+                            </Tooltip>
+                         </TabsList>
+                    </div>
+
+                     {/* Volatility */}
+                     <div className="space-y-1">
+                         <Label className="text-[10px] text-gray-500 uppercase tracking-wider pl-1">Volatility / Neutral</Label>
+                         <TabsList className="bg-slate-950 border border-white/10 w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 p-1">
+                             <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="straddle-strangle" className={tabClass}>Straddle / Strangle</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Profit from high volatility (large move).</p></TooltipContent>
+                            </Tooltip>
+                            
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="iron-condor" className={tabClass}>Iron Condor</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Profit from low volatility (range bound). Selling OTM Strangle.</p></TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <TabsTrigger value="iron-butterfly" className={tabClass}>Iron Butterfly</TabsTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Neutral. Profit from price pinning at ATM. Selling ATM Straddle.</p></TooltipContent>
+                            </Tooltip>
+                         </TabsList>
+                    </div>
+
+                </div>
             </Tabs>
+            </TooltipProvider>
 
             <div className={`grid gap-6 py-2 transition-opacity duration-200 ${strategy === 'none' ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
                 {/* Expiration Slider - Hide on None */}
@@ -278,7 +464,7 @@ export function OptionsStrategyControls({
                     </div>
                 )}
                 
-                {strategy === "bull-call-spread" && (
+                {(strategy === "bull-call-spread" || strategy === "bull-put-spread" || strategy === "bear-call-spread") && (
                      <div className="space-y-2">
                         <div className="flex justify-between">
                             <Label>Spread Width</Label>
@@ -292,7 +478,9 @@ export function OptionsStrategyControls({
                             onValueChange={([v]) => setStrategyWidth(v)} 
                         />
                         <p className="text-[10px] text-gray-500">
-                            Buy Call @ ATM, Sell Call {strategyWidth}% higher.
+                           {strategy === "bull-call-spread" && `Buy Call @ ATM, Sell Call ${strategyWidth}% higher.`}
+                           {strategy === "bull-put-spread" && `Sell Put @ Target, Buy Put ${strategyWidth}% lower.`}
+                           {strategy === "bear-call-spread" && `Sell Call @ Target, Buy Call ${strategyWidth}% higher.`}
                         </p>
                     </div>
                 )}
@@ -316,10 +504,10 @@ export function OptionsStrategyControls({
                     </div>
                 )}
 
-                {(strategy === "covered-call" || strategy === "collar") && (
+                {(strategy === "covered-call" || strategy === "collar" || strategy === "bull-put-spread" || strategy === "bear-call-spread") && (
                     <div className="space-y-2">
                         <div className="flex justify-between">
-                            <Label>Call Target Delta (Upside Cap)</Label>
+                            <Label>Target Delta (Short Leg)</Label>
                             <span className="text-xs text-green-400 font-mono">{targetDelta.toFixed(2)}</span>
                         </div>
                          <Slider 
@@ -330,7 +518,7 @@ export function OptionsStrategyControls({
                             onValueChange={([v]) => setTargetDelta(v)} 
                         />
                         <p className="text-[10px] text-gray-500">
-                            Sell Call with approx {targetDelta} Delta.
+                            Sell leg targeting approx {targetDelta} Delta.
                         </p>
                     </div>
                 )}
@@ -388,6 +576,25 @@ export function OptionsStrategyControls({
                         </div>
                         <p className="col-span-2 text-[10px] text-gray-500">
                             Sell {targetDelta} Delta Strangle, Buy wings {strategyWidth}% further out.
+                        </p>
+                    </div>
+                )}
+                
+                {strategy === "iron-butterfly" && (
+                     <div className="space-y-2">
+                        <div className="flex justify-between">
+                            <Label>Wing Width</Label>
+                            <span className="text-xs text-blue-400 font-mono">{strategyWidth}%</span>
+                        </div>
+                        <Slider 
+                            value={[strategyWidth]} 
+                            min={1} 
+                            max={20} 
+                            step={1} 
+                            onValueChange={([v]) => setStrategyWidth(v)} 
+                        />
+                        <p className="text-[10px] text-gray-500">
+                            Sell ATM Straddle, Buy Wings {strategyWidth}% OTM.
                         </p>
                     </div>
                 )}

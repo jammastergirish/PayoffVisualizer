@@ -1949,6 +1949,7 @@ export function PayoffDashboard() {
                   <TabsTrigger value="news" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">News</TabsTrigger>
                   <TabsTrigger value="risk" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">Positions & Profile</TabsTrigger>
                   <TabsTrigger value="payoff" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">Payoff Diagram</TabsTrigger>
+
                   <TabsTrigger value="trade" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">Trade Stock</TabsTrigger>
                   <TabsTrigger value="options" className="data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-400">Options Chain</TabsTrigger>
                 </TabsList>
@@ -2051,6 +2052,110 @@ export function PayoffDashboard() {
                       />
                     </CardContent>
                   </Card>
+                </TabsContent>
+
+                <TabsContent value="payoff" className="mt-4 space-y-6">
+               <Card className="bg-slate-950 border-white/10 text-white overflow-hidden">
+                 <CardHeader className="flex flex-row items-center justify-between pb-6 border-b border-white/5 bg-white/5">
+                    <CardTitle className="text-xl font-light tracking-wide">{selectedTicker}</CardTitle>
+                    <div className="flex items-center gap-6 text-sm">
+                       <div className="flex items-center gap-2">
+                          <Switch 
+                            checked={showStock} 
+                            onCheckedChange={setShowStock} 
+                            id="show-stock" 
+                            className="data-[state=checked]:bg-slate-700"
+                          />
+                          <Label htmlFor="show-stock" className="text-slate-400 cursor-pointer touch-manipulation">Stock</Label>
+                       </div>
+                       <div className="flex items-center gap-2">
+                          <Switch 
+                            checked={showOptions} 
+                            onCheckedChange={setShowOptions} 
+                            id="show-options" 
+                            className="data-[state=checked]:bg-purple-600"
+                          />
+                          <Label htmlFor="show-options" className="text-purple-400 cursor-pointer touch-manipulation">Options</Label>
+                       </div>
+                       <div className="flex items-center gap-2">
+                          <Switch 
+                            checked={showCombined} 
+                            onCheckedChange={setShowCombined} 
+                            id="show-combined" 
+                            className="data-[state=checked]:bg-orange-600"
+                          />
+                          <Label htmlFor="show-combined" className="font-bold text-orange-500 cursor-pointer touch-manipulation">Combined</Label>
+                       </div>
+                       <div className="pl-4 border-l border-white/10 flex items-center gap-2">
+                          <Switch 
+                            checked={showT0} 
+                            onCheckedChange={setShowT0} 
+                            id="show-t0" 
+                            className="data-[state=checked]:bg-cyan-500"
+                          />
+                          <Label htmlFor="show-t0" className="text-cyan-400 cursor-pointer touch-manipulation">Show T+0 Prediction</Label>
+                       </div>
+                    </div>
+                 </CardHeader>
+                 <CardContent className="pt-6">
+                    {/* Simulation Controls */}
+                    {showT0 && (
+                        <div className="mb-8 p-4 bg-cyan-950/20 border border-cyan-500/20 rounded-lg grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div>
+                                <div className="flex justify-between mb-2">
+                                    <Label className="text-cyan-100">Implied Volatility (IV) Adjustment</Label>
+                                    <span className={`text-sm font-mono ${ivAdjustment > 0 ? 'text-green-400' : ivAdjustment < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                                        {ivAdjustment > 0 ? '+' : ''}{(ivAdjustment * 100).toFixed(0)}%
+                                    </span>
+                                </div>
+                                <Slider 
+                                    min={-0.5} 
+                                    max={0.5} 
+                                    step={0.01} 
+                                    value={[ivAdjustment]} 
+                                    onValueChange={(vals) => setIvAdjustment(vals[0])}
+                                    className="py-2"
+                                />
+                                <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+                                    <span>-50%</span>
+                                    <span>0%</span>
+                                    <span>+50%</span>
+                                </div>
+                            </div>
+                            <div>
+                                <div className="flex justify-between mb-2">
+                                    <Label className="text-cyan-100">Date Simulation</Label>
+                                    <span className="text-sm font-mono text-cyan-200">
+                                        {formatDate(targetDate)} <span className="text-xs text-gray-500">({daysOffset === 0 ? 'Today' : `+${daysOffset}d`})</span>
+                                    </span>
+                                </div>
+                                <Slider 
+                                    min={0} 
+                                    max={180} 
+                                    step={1} 
+                                    value={[daysOffset]} 
+                                    onValueChange={(vals) => setDaysOffset(vals[0])}
+                                    className="py-2"
+                                />
+                                <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+                                    <span>Today</span>
+                                    <span>+6 Months</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <PayoffChart 
+                       data={chartData.data} 
+                       currentPrice={currentPrice}
+                       privacyMode={privacyMode}
+                       showStock={showStock}
+                       showOptions={showOptions}
+                       showCombined={showCombined}
+                       showT0={showT0}
+                    />
+                 </CardContent>
+               </Card>
                 </TabsContent>
 
                 <TabsContent value="payoff" className="mt-4 space-y-6">

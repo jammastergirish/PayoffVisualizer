@@ -22,6 +22,14 @@ vi.mock('@/components/ui/slider', () => ({
   ),
 }));
 
+// Mock Tooltip components to avoid Radix UI issues in tests
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: any) => <>{children}</>,
+  TooltipTrigger: ({ children }: any) => <>{children}</>,
+  TooltipContent: ({ children }: any) => <div data-testid="tooltip-content">{children}</div>,
+  TooltipProvider: ({ children }: any) => <>{children}</>,
+}));
+
 // Mock Data
 function createMockOptionsChain(): OptionsChain {
   const expirations = ['2026-06-19', '2026-07-17', '2026-08-21'];
@@ -96,8 +104,8 @@ describe('OptionsStrategyControls', () => {
     
     expect(screen.getByText('Strategy Presets')).toBeInTheDocument();
     expect(screen.getByText('Custom')).toBeInTheDocument();
-    expect(screen.getByText('Prot Put')).toBeInTheDocument();
-    expect(screen.getByText('Cov Call')).toBeInTheDocument();
+    expect(screen.getByText('Protective Put')).toBeInTheDocument();
+    expect(screen.getByText('Covered Call')).toBeInTheDocument();
     expect(screen.getByText('Iron Condor')).toBeInTheDocument();
   });
 
@@ -114,8 +122,8 @@ describe('OptionsStrategyControls', () => {
     const user = userEvent.setup();
     render(<OptionsStrategyControls {...defaultProps} />);
     
-    // Click 'Prot Put'
-    await user.click(screen.getByText('Prot Put'));
+    // Click 'Protective Put'
+    await user.click(screen.getByText('Protective Put'));
     
     await waitFor(() => {
       expect(screen.getByText('Expiration')).toBeInTheDocument();
@@ -128,7 +136,7 @@ describe('OptionsStrategyControls', () => {
     render(<OptionsStrategyControls {...defaultProps} />);
     
     // Select strategy
-    await user.click(screen.getByText('Prot Put'));
+    await user.click(screen.getByText('Protective Put'));
     
     await waitFor(() => {
         expect(mockOnUpdateLegs).toHaveBeenCalled();
@@ -150,7 +158,7 @@ describe('OptionsStrategyControls', () => {
     const user = userEvent.setup();
     render(<OptionsStrategyControls {...defaultProps} />);
     
-    await user.click(screen.getByText('Cov Call'));
+    await user.click(screen.getByText('Covered Call'));
     
     await waitFor(() => {
         expect(mockOnUpdateLegs).toHaveBeenCalled();
@@ -194,7 +202,7 @@ describe('OptionsStrategyControls', () => {
     const user = userEvent.setup();
     render(<OptionsStrategyControls {...defaultProps} />);
     
-    await user.click(screen.getByText('Prot Put'));
+    await user.click(screen.getByText('Protective Put'));
     
     // Wait for sliders to appear
     await waitFor(() => {
@@ -232,7 +240,7 @@ describe('OptionsStrategyControls', () => {
     
     render(<OptionsStrategyControls {...propsWithStock} />);
     
-    await user.click(screen.getByText('Prot Put')); // Hedging strategy
+    await user.click(screen.getByText('Protective Put')); // Hedging strategy
     
     await waitFor(() => {
         expect(mockOnUpdateLegs).toHaveBeenCalled();
@@ -246,7 +254,7 @@ describe('OptionsStrategyControls', () => {
        const user = userEvent.setup();
        render(<OptionsStrategyControls {...defaultProps} />);
        
-       await user.click(screen.getByText('Bear Put'));
+       await user.click(screen.getByText('Bear Put Spread'));
        
        await waitFor(() => {
             expect(mockOnUpdateLegs).toHaveBeenCalled();
@@ -259,5 +267,128 @@ describe('OptionsStrategyControls', () => {
        
         expect(lastCall.find((l:any) => l.action === 'BUY')).toBeDefined();
         expect(lastCall.find((l:any) => l.action === 'SELL')).toBeDefined();
+  });
+
+  it('generates Bull Put Spread legs correctly', async () => {
+    const user = userEvent.setup();
+    render(<OptionsStrategyControls {...defaultProps} />);
+    
+    await user.click(screen.getByText('Bull Put Spread'));
+    
+    await waitFor(() => {
+        expect(mockOnUpdateLegs).toHaveBeenCalled();
+    });
+    
+    const lastCall = mockOnUpdateLegs.mock.calls[mockOnUpdateLegs.mock.calls.length - 1][0];
+    expect(lastCall).toHaveLength(2);
+    // Both Puts
+    expect(lastCall[0].right).toBe('P');
+    expect(lastCall[1].right).toBe('P');
+    // Credit Spread: Sell Higher (Short Delta approx), Buy Lower
+    expect(lastCall.find((l:any) => l.action === 'BUY')).toBeDefined();
+    expect(lastCall.find((l:any) => l.action === 'SELL')).toBeDefined();
+  });
+
+  it('generates Bear Call Spread legs correctly', async () => {
+    const user = userEvent.setup();
+    render(<OptionsStrategyControls {...defaultProps} />);
+    
+    await user.click(screen.getByText('Bear Call Spread'));
+    
+    await waitFor(() => {
+        expect(mockOnUpdateLegs).toHaveBeenCalled();
+    });
+    
+    const lastCall = mockOnUpdateLegs.mock.calls[mockOnUpdateLegs.mock.calls.length - 1][0];
+    expect(lastCall).toHaveLength(2);
+    // Both Calls
+    expect(lastCall[0].right).toBe('C');
+    expect(lastCall[1].right).toBe('C');
+    // Credit Spread: Sell Lower, Buy Higher
+    expect(lastCall.find((l:any) => l.action === 'BUY')).toBeDefined();
+    expect(lastCall.find((l:any) => l.action === 'SELL')).toBeDefined();
+  });
+
+  it('generates Iron Butterfly legs correctly', async () => {
+    const user = userEvent.setup();
+    render(<OptionsStrategyControls {...defaultProps} />);
+    
+    await user.click(screen.getByText('Iron Butterfly'));
+    
+    await waitFor(() => {
+        expect(mockOnUpdateLegs).toHaveBeenCalled();
+    });
+    
+    const lastCall = mockOnUpdateLegs.mock.calls[mockOnUpdateLegs.mock.calls.length - 1][0];
+    expect(lastCall).toHaveLength(4);
+    
+    // Straddle (Sell Call + Put) + Wings (Buy Call + Put)
+    const rights = lastCall.map((leg: any) => leg.right);
+    const actions = lastCall.map((leg: any) => leg.action);
+    
+    expect(rights.filter((r: string) => r === 'C').length).toBe(2);
+    expect(rights.filter((r: string) => r === 'P').length).toBe(2);
+    expect(actions.filter((a: string) => a === 'BUY').length).toBe(2);
+    expect(actions.filter((a: string) => a === 'SELL').length).toBe(2);
+  });
+
+  it('generates Calendar Call Spread legs correctly', async () => {
+    const user = userEvent.setup();
+    render(<OptionsStrategyControls {...defaultProps} />);
+    
+    // Select Calendar Call
+    await user.click(screen.getByText("Calendar Call"));
+    
+    await waitFor(() => {
+        expect(mockOnUpdateLegs).toHaveBeenCalled();
+    });
+    
+    const calls = mockOnUpdateLegs.mock.calls;
+    const legs = calls[calls.length - 1][0];
+    
+    expect(legs).toHaveLength(2);
+    
+    // Sell Near (2026-06-19 - default expiry [0])
+    expect(legs[0].expiry).toBe("2026-06-19");
+    expect(legs[0].action).toBe("SELL");
+    expect(legs[0].right).toBe("C");
+    
+    // Buy Far (2026-07-17 - default expiry [1])
+    expect(legs[1].expiry).toBe("2026-07-17");
+    expect(legs[1].action).toBe("BUY");
+    expect(legs[1].right).toBe("C");
+    
+    // Same strike (ATM)
+    expect(legs[0].strike).toBe(legs[1].strike);
+  });
+
+  it('generates Calendar Put Spread legs correctly', async () => {
+    const user = userEvent.setup();
+    render(<OptionsStrategyControls {...defaultProps} />);
+    
+    // Select Calendar Put
+    await user.click(screen.getByText("Calendar Put"));
+    
+    await waitFor(() => {
+        expect(mockOnUpdateLegs).toHaveBeenCalled();
+    });
+    
+    const calls = mockOnUpdateLegs.mock.calls;
+    const legs = calls[calls.length - 1][0];
+    
+    expect(legs).toHaveLength(2);
+    
+    // Sell Near (2026-06-19 - default expiry [0])
+    expect(legs[0].expiry).toBe("2026-06-19");
+    expect(legs[0].action).toBe("SELL");
+    expect(legs[0].right).toBe("P");
+    
+    // Buy Far (2026-07-17 - default expiry [1])
+    expect(legs[1].expiry).toBe("2026-07-17");
+    expect(legs[1].action).toBe("BUY");
+    expect(legs[1].right).toBe("P");
+    
+    // Same strike
+    expect(legs[0].strike).toBe(legs[1].strike);
   });
 });
