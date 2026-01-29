@@ -42,6 +42,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "happy-dom": "^20.4.0",
     "jsdom": "^23.2.0",
     "tailwindcss": "^4",
     "tailwindcss-animate": "^1.0.7",

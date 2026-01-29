@@ -228,6 +228,32 @@ export async function fetchNewsArticle(
     }
 }
 
+// =====================
+// Analyst Insights API
+// =====================
+
+export interface AnalystInsight {
+    firm: string;
+    rating_action: string;
+    rating: string;
+    price_target: number | null;
+    date: string;
+    insight: string;
+    company_name: string;
+    ticker?: string;
+}
+
+export async function fetchAnalystInsights(
+    symbol: string,
+    limit: number = 20
+): Promise<{ symbol: string; insights: AnalystInsight[]; provider: string }> {
+    return apiRequest(
+        `/api/insights/${symbol}?limit=${limit}`,
+        undefined,
+        { symbol, insights: [], provider: "unknown" }
+    );
+}
+
 
 // =====================
 // Daily Snapshot API

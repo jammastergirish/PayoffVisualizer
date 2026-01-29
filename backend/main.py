@@ -334,6 +334,42 @@ def get_article(article_id: str):
     return {**result, "provider": NEWS_PROVIDER}
 
 
+@app.get("/api/insights/{symbol}")
+def get_analyst_insights(symbol: str, limit: int = 10):
+    """
+    Get analyst insights and ratings from data provider.
+    
+    Args:
+        symbol: Stock ticker (e.g., AAPL)
+        limit: Max number of insights (default 10)
+    """
+    # Use news_provider or data_provider? Massive is usually DATA but Benzinga is NEWS.
+    # The method is on DataProviderInterface (implemented by MassiveProvider).
+    # Since news_provider might be MassiveProvider instance, and get_analyst_insights is on it,
+    # we can try news_provider first, then data_provider.
+    # Actually, in main.py logic:
+    # data_provider = DataProviderFactory.create(DATA_PROVIDER)
+    # news_provider = DataProviderFactory.create(NEWS_PROVIDER)
+    
+    # Insights are closer to "News" but stored in MassiveProvider which handles both.
+    # Let's try standardizing on "news_provider" for this if it supports it.
+    
+    provider = news_provider
+    provider_name = NEWS_PROVIDER
+    
+    # Fallback to data provider if news provider doesn't support insights (e.g. IBKR/Alpaca) 
+    # but Massive (Data) does.
+    # Actually MassiveProvider implements both interfaces.
+    
+    insights = provider.get_analyst_insights(validate_symbol(symbol), limit)
+    
+    return {
+        "symbol": validate_symbol(symbol), 
+        "insights": insights, 
+        "provider": provider_name
+    }
+
+
 # ============================================
 # Cache Management Endpoint
 # ============================================

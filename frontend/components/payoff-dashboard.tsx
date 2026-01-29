@@ -21,13 +21,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { checkBackendHealth, fetchLivePortfolio, fetchHistoricalData, HistoricalBar, fetchNewsHeadlines, fetchMarketNewsHeadlines, NewsHeadline, fetchTickerDetails, TickerDetails, fetchDailySnapshot, DailySnapshot, placeTrade, TradeOrder, TradeResult, fetchOptionsChain, OptionsChain, OptionQuote, placeOptionsOrder, OptionLeg, fetchMarketNewsAnalysis, fetchTickerNewsAnalysis, LLMAnalysisResponse, fetchOrders, Order } from "@/lib/api-client";
 import { Input } from "@/components/ui/input";
 import { NewsModal } from "@/components/news-modal";
+import { AnalystInsights } from "@/components/analyst-insights";
+import { MarkdownDisplay } from "@/components/markdown-display";
 import { NewsItemList } from "@/components/news-item-list";
 import { OrdersTable } from "@/components/orders-table";
 import { TickerDisplay } from "@/components/ticker-display";
 import { CandlestickChart } from "@/components/candlestick-chart";
 import { useToast } from "@/components/ui/toast";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, ReferenceLine } from "recharts";
-import ReactMarkdown from "react-markdown";
 import { Settings } from "lucide-react";
 import Link from "next/link";
 
@@ -1523,9 +1524,10 @@ export function PayoffDashboard() {
                       <span className="animate-spin">⏳</span> Analyzing headlines for your portfolio...
                     </p>
                   ) : (
-                    <div className="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">
-                      <ReactMarkdown>{marketNewsAnalysis}</ReactMarkdown>
-                    </div>
+                    <MarkdownDisplay 
+                      content={marketNewsAnalysis} 
+                      className="text-sm text-gray-300"
+                    />
                   )}
                 </div>
               )}
@@ -1947,6 +1949,7 @@ export function PayoffDashboard() {
                 <TabsList className="bg-slate-900 border border-white/10">
                   <TabsTrigger value="chart" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">Price Chart</TabsTrigger>
                   <TabsTrigger value="news" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">News</TabsTrigger>
+                  <TabsTrigger value="insights" className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-400">Insights</TabsTrigger>
                   <TabsTrigger value="risk" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">Positions & Profile</TabsTrigger>
                   <TabsTrigger value="payoff" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">Payoff Diagram</TabsTrigger>
 
@@ -2033,9 +2036,10 @@ export function PayoffDashboard() {
                               <span className="animate-spin">⏳</span> Analyzing headlines for {selectedTicker}...
                             </p>
                           ) : (
-                            <div className="text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none">
-                              <ReactMarkdown>{tickerNewsAnalysis}</ReactMarkdown>
-                            </div>
+                            <MarkdownDisplay 
+                              content={tickerNewsAnalysis} 
+                              className="text-sm text-gray-300"
+                            />
                           )}
                         </div>
                       )}
@@ -2052,6 +2056,28 @@ export function PayoffDashboard() {
                       />
                     </CardContent>
                   </Card>
+                </TabsContent>
+
+                <TabsContent value="insights" className="mt-4">
+                     <Card className="bg-slate-950 border-white/10">
+                        <CardHeader>
+                           <CardTitle className="text-blue-400">Analyst Insights for {selectedTicker}</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                           <AnalystInsights ticker={selectedTicker || ""} />
+                        </CardContent>
+                     </Card>
+                </TabsContent>
+
+                <TabsContent value="insights" className="mt-4">
+                     <Card className="bg-slate-950 border-white/10">
+                        <CardHeader>
+                           <CardTitle className="text-blue-400">Analyst Insights for {selectedTicker}</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                           <AnalystInsights ticker={selectedTicker || ""} />
+                        </CardContent>
+                     </Card>
                 </TabsContent>
 
                 <TabsContent value="payoff" className="mt-4 space-y-6">

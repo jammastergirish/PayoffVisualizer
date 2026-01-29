@@ -724,6 +724,58 @@ def get_options_chain(symbol: str, max_strikes: int = 30, max_contracts: int = 2
             "error": error_msg
         }
 
+    return {
+        "symbol": symbol,
+        "headlines": all_headlines
+    }
+
+
+def _fetch_analyst_insights(ticker: str, limit: int) -> list:
+    """Fetch analyst insights from Massive (Benzinga)."""
+    if not _client:
+        return []
+
+    insights = []
+    try:
+        # Check if client wrapper supports list_benzinga_analyst_insights
+        # If not, we might need to handle Attribute Error or use alternative
+        # Assuming module massive has been updated or supports it as user indicated
+        if hasattr(_client, 'list_benzinga_analyst_insights'):
+            res_iter = _client.list_benzinga_analyst_insights(
+                ticker=ticker,
+                limit=limit,
+                sort="date.desc"
+            )
+            count = 0
+            for item in res_iter:
+                if count >= limit:
+                    break
+                count += 1
+                
+                # Normalize result
+                insights.append({
+                    "firm": getattr(item, 'firm', ''),
+                    "rating_action": getattr(item, 'rating_action', ''),
+                    "rating": getattr(item, 'rating', ''),
+                    "price_target": getattr(item, 'price_target', None),
+                    "date": getattr(item, 'date', ''),
+                    "insight": getattr(item, 'insight', ''),
+                    "company_name": getattr(item, 'company_name', ''),
+                })
+            print(f"DEBUG [Massive]: Retrieved {count} analyst insights for {ticker}")
+        else:
+            print("WARN [Massive]: client.list_benzinga_analyst_insights not available")
+            
+    except Exception as e:
+        print(f"WARN [Massive]: Failed to fetch analyst insights for {ticker}: {e}")
+
+    return insights
+
+
+def get_analyst_insights(symbol: str, limit: int = 10) -> list:
+    """Fetch analyst insights/ratings."""
+    return _fetch_analyst_insights(symbol, limit)
+
 
 class MassiveProvider(DataProviderInterface):
     """Massive data provider implementation."""
@@ -733,7 +785,8 @@ class MassiveProvider(DataProviderInterface):
             "historical": 60,  # 1 minute
             "snapshot": 30,    # 30 seconds
             "news": 180,       # 3 minutes
-            "options": None    # Dynamic based on market hours
+            "options": None,   # Dynamic based on market hours
+            "insights": 3600   # 1 hour
         }
 
     def get_historical_data(self, symbol: str, timeframe: str = "1M") -> List[HistoricalBar]:
@@ -803,6 +856,46 @@ class MassiveProvider(DataProviderInterface):
             return cached
 
         data = get_news(symbol, limit)
+        if "headlines" in data:
+             news_cache.set(cache_key, data["headlines"])
+             return data["headlines"]
+        return []
+
+    def get_market_news(self, limit: int = 25) -> List[Dict[str, Any]]:
+        """Get general market news from Massive."""
+        # Market news not ticker specific, cache globally?
+        cache_key = "market_news"
+        # Since we use shared news_cache, ensure key doesn't collide with tickers
+        
+        cached = news_cache.get(cache_key, self.cache_ttl["news"])
+        if cached:
+            return cached
+            
+        data = get_market_news(limit)
+        if "headlines" in data:
+             news_cache.set(cache_key, data["headlines"])
+             return data["headlines"]
+        return []
+
+    def get_news_article(self, article_id: str) -> Dict[str, Any]:
+        """Get full news article from Massive."""
+        return get_news_article(article_id)
+
+    def get_options_chain(self, symbol: str, max_strikes: int = 30) -> Dict[str, Any]:
+        """Get options chain data from Massive."""
+        return get_options_chain(symbol, max_strikes)
+
+    def get_analyst_insights(self, symbol: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get analyst ratings and insights from Massive."""
+        cache_key = f"insights:{symbol}"
+        cached = news_cache.get(cache_key, self.cache_ttl["insights"])
+        if cached:
+            return cached
+
+        insights = get_analyst_insights(symbol, limit)
+        if insights:
+            news_cache.set(cache_key, insights)
+        return insights
         if "headlines" in data:
             news_cache.set(cache_key, data["headlines"])
             return data["headlines"]

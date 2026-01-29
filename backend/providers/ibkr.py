@@ -639,3 +639,7 @@ class IBKRProvider(DataProviderInterface):
     def get_options_chain(self, symbol: str, max_strikes: int = 30) -> Dict[str, Any]:
         """Get options chain data from IBKR."""
         return get_options_chain(symbol, max_strikes)
+
+    def get_analyst_insights(self, symbol: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get analyst ratings - Not supported by IBKR provider (requires premium news sub in API)."""
+        return []
