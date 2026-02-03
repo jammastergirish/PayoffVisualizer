@@ -1,6 +1,6 @@
 #!/bin/bash
 
-clear
+clear && printf '\e[3J'
 
 # Kill background processes on exit
 trap 'kill $(jobs -p)' EXIT
