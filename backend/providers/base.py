@@ -48,3 +48,11 @@ class DataProviderInterface(ABC):
     def get_options_chain(self, symbol: str, max_strikes: int = 30) -> Dict[str, Any]:
         """Get options chain data."""
         pass
+
+    def get_insider_trades(self, symbol: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get SEC Form 4 insider transactions. Default: not supported."""
+        return []
+
+    def get_insider_history(self, owner_cik: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get an insider's Form 4 history across companies. Default: not supported."""
+        return []

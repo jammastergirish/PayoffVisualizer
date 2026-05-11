@@ -334,6 +334,38 @@ def get_article(article_id: str):
     return {**result, "provider": NEWS_PROVIDER}
 
 
+@app.get("/api/insider-trades/{symbol}")
+def get_insider_trades(symbol: str, limit: int = 50):
+    """
+    Get SEC Form 4 insider transactions for a ticker.
+
+    Args:
+        symbol: Stock ticker (e.g., AAPL)
+        limit: Max number of rows (default 50)
+    """
+    sym = validate_symbol(symbol)
+    trades = news_provider.get_insider_trades(sym, limit)
+    return {"symbol": sym, "trades": trades, "provider": NEWS_PROVIDER}
+
+
+@app.get("/api/insider-history/{owner_cik}")
+def get_insider_history(owner_cik: str, limit: int = 100):
+    """
+    Get an insider's Form 4 transaction history across every company they're
+    an insider of, looked up by SEC owner CIK.
+
+    Args:
+        owner_cik: SEC Central Index Key of the reporting owner (digits only)
+        limit: Max number of rows (default 100)
+    """
+    # CIK is digits-only; reject anything else to keep the path safe.
+    cik = "".join(ch for ch in owner_cik if ch.isdigit())
+    if not cik:
+        return {"owner_cik": owner_cik, "trades": [], "provider": NEWS_PROVIDER, "error": "invalid CIK"}
+    trades = news_provider.get_insider_history(cik, limit)
+    return {"owner_cik": cik, "trades": trades, "provider": NEWS_PROVIDER}
+
+
 @app.get("/api/insights/{symbol}")
 def get_analyst_insights(symbol: str, limit: int = 10):
     """

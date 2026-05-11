@@ -254,6 +254,63 @@ export async function fetchAnalystInsights(
     );
 }
 
+// =====================
+// Insider Trades (SEC Form 4) API
+// =====================
+
+export interface InsiderTrade {
+    accession_number: string;
+    filing_date: string;
+    filing_url: string | null;
+    transaction_date: string | null;
+    period_of_report: string | null;
+    owner_cik: string | null;
+    owner_name: string;
+    owner_roles: string[];
+    officer_title: string | null;
+    is_director: boolean;
+    is_officer: boolean;
+    is_ten_percent_owner: boolean;
+    is_other: boolean;
+    issuer_cik: string | null;
+    issuer_name: string | null;
+    tickers: string[] | null;
+    security_title: string;
+    security_type: string;
+    transaction_code: string;
+    transaction_label: string;
+    transaction_category: "discretionary" | "mechanical";
+    transaction_acquired_disposed: "A" | "D" | string;
+    transaction_shares: number | null;
+    transaction_price_per_share: number | null;
+    transaction_value: number | null;
+    shares_owned_following_transaction: number | null;
+    aff_10b5_one: boolean;
+    form_type: string;
+}
+
+export async function fetchInsiderTrades(
+    symbol: string,
+    limit: number = 100
+): Promise<{ symbol: string; trades: InsiderTrade[]; provider: string }> {
+    return apiRequest(
+        `/api/insider-trades/${symbol}?limit=${limit}`,
+        undefined,
+        { symbol, trades: [], provider: "unknown" }
+    );
+}
+
+export async function fetchInsiderHistory(
+    ownerCik: string,
+    limit: number = 100
+): Promise<{ owner_cik: string; trades: InsiderTrade[]; provider: string }> {
+    return apiRequest(
+        `/api/insider-history/${encodeURIComponent(ownerCik)}?limit=${limit}`,
+        undefined,
+        { owner_cik: ownerCik, trades: [], provider: "unknown" }
+    );
+}
+
 
 // =====================
 // Daily Snapshot API

@@ -3,6 +3,7 @@
 import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
+import httpx
 from massive import RESTClient
 from .base import DataProviderInterface
 from ..common.models import HistoricalBar
@@ -777,6 +778,115 @@ def get_analyst_insights(symbol: str, limit: int = 10) -> list:
     return _fetch_analyst_insights(symbol, limit)
 
 
+# SEC Form 4 transaction codes — see https://www.sec.gov/about/forms/form4data.pdf
+# Categorized as "discretionary" (open-market decision) vs "mechanical"
+# (pre-planned, vesting, tax, gift, etc.) so the UI can highlight signal.
+FORM4_CODE_META = {
+    "P": {"label": "Open-market purchase", "category": "discretionary"},
+    "S": {"label": "Open-market sale", "category": "discretionary"},
+    "V": {"label": "Voluntary reported transaction", "category": "discretionary"},
+    "A": {"label": "Grant / award", "category": "mechanical"},
+    "M": {"label": "Option exercise / conversion", "category": "mechanical"},
+    "F": {"label": "Shares withheld for taxes", "category": "mechanical"},
+    "D": {"label": "Disposition to issuer", "category": "mechanical"},
+    "G": {"label": "Gift", "category": "mechanical"},
+    "I": {"label": "Discretionary transaction (plan)", "category": "mechanical"},
+    "J": {"label": "Other (see footnote)", "category": "mechanical"},
+    "K": {"label": "Equity swap", "category": "mechanical"},
+    "L": {"label": "Small acquisition", "category": "mechanical"},
+    "U": {"label": "Tender of shares", "category": "mechanical"},
+    "W": {"label": "Will / inheritance", "category": "mechanical"},
+    "X": {"label": "In-the-money option exercise", "category": "mechanical"},
+    "C": {"label": "Conversion of derivative", "category": "mechanical"},
+    "E": {"label": "Expiration of short position", "category": "mechanical"},
+    "H": {"label": "Long-term expiration", "category": "mechanical"},
+    "O": {"label": "Out-of-the-money option exercise", "category": "mechanical"},
+    "Z": {"label": "Voting trust", "category": "mechanical"},
+}
+
+
+def _build_sec_filing_url(issuer_cik: Optional[str], accession_number: Optional[str]) -> Optional[str]:
+    """Build a canonical EDGAR filing index URL from CIK + accession number."""
+    if not issuer_cik or not accession_number:
+        return None
+    try:
+        cik_int = int(str(issuer_cik))
+    except (TypeError, ValueError):
+        return None
+    no_dashes = str(accession_number).replace("-", "")
+    return f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{no_dashes}/{accession_number}-index.htm"
+
+
+def _annotate_form4_row(row: dict) -> dict:
+    """Add human-readable label & category to a Form 4 row."""
+    code = (row.get("transaction_code") or "").upper()
+    meta = FORM4_CODE_META.get(code, {"label": code or "Unknown", "category": "mechanical"})
+    row["transaction_label"] = meta["label"]
+    row["transaction_category"] = meta["category"]
+
+    # filing_url from the API is often null; synthesize from CIK + accession.
+    if not row.get("filing_url"):
+        row["filing_url"] = _build_sec_filing_url(row.get("issuer_cik"), row.get("accession_number"))
+
+    # Role summary for the owner
+    roles = []
+    if row.get("is_director"):
+        roles.append("Director")
+    if row.get("is_officer"):
+        roles.append("Officer")
+    if row.get("is_ten_percent_owner"):
+        roles.append("10% Owner")
+    if row.get("is_other"):
+        roles.append("Other")
+    row["owner_roles"] = roles
+    return row
+
+
+def _fetch_form4(query_params: dict, limit: int, log_label: str) -> list:
+    """Fetch SEC Form 4 filings via Massive's REST API.
+
+    The Python SDK does not yet expose list_form_4, so we call the endpoint
+    directly with the configured API key. `query_params` should contain the
+    filter (e.g. {"tickers": "AAPL"} or {"owner_cik": "0001214156"}).
+    """
+    if not _api_key:
+        return []
+
+    url = "https://api.massive.com/stocks/filings/vX/form-4"
+    params = {
+        **query_params,
+        "limit": min(max(limit, 1), 1000),
+        "sort": "filing_date.desc",
+    }
+    headers = {"Authorization": f"Bearer {_api_key}", "Accept-Encoding": "gzip"}
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(url, params=params, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        print(f"WARN [Massive]: Failed to fetch Form 4 for {log_label}: {e}")
+        return []
+
+    results = data.get("results") or []
+    return [_annotate_form4_row(row) for row in results]
+
+
+def get_insider_trades(symbol: str, limit: int = 50) -> list:
+    """Fetch SEC Form 4 insider transactions for a ticker."""
+    return _fetch_form4({"tickers": symbol}, limit, log_label=symbol)
+
+
+def get_insider_history(owner_cik: str, limit: int = 100) -> list:
+    """Fetch SEC Form 4 transactions for a single insider across all companies."""
+    # CIKs are 10-digit zero-padded; accept either form.
+    cik = str(owner_cik).strip()
+    if cik.isdigit():
+        cik = cik.zfill(10)
+    return _fetch_form4({"owner_cik": cik}, limit, log_label=f"owner={cik}")
+
+
 class MassiveProvider(DataProviderInterface):
     """Massive data provider implementation."""
 
@@ -786,7 +896,8 @@ class MassiveProvider(DataProviderInterface):
             "snapshot": 30,    # 30 seconds
             "news": 180,       # 3 minutes
             "options": None,   # Dynamic based on market hours
-            "insights": 3600   # 1 hour
+            "insights": 3600,  # 1 hour
+            "form4": 900,      # 15 minutes
         }
 
     def get_historical_data(self, symbol: str, timeframe: str = "1M") -> List[HistoricalBar]:
@@ -942,3 +1053,27 @@ class MassiveProvider(DataProviderInterface):
         if "error" not in data:
             options_cache.set(cache_key, data)
         return data
+
+    def get_insider_trades(self, symbol: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get SEC Form 4 insider transactions from Massive."""
+        cache_key = f"form4:{symbol}:{limit}"
+        cached = news_cache.get(cache_key, self.cache_ttl["form4"])
+        if cached:
+            return cached
+
+        trades = get_insider_trades(symbol, limit)
+        if trades:
+            news_cache.set(cache_key, trades)
+        return trades
+
+    def get_insider_history(self, owner_cik: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get all SEC Form 4 transactions for a single insider across companies."""
+        cache_key = f"form4:owner:{owner_cik}:{limit}"
+        cached = news_cache.get(cache_key, self.cache_ttl["form4"])
+        if cached:
+            return cached
+
+        trades = get_insider_history(owner_cik, limit)
+        if trades:
+            news_cache.set(cache_key, trades)
+        return trades
