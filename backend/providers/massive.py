@@ -979,6 +979,86 @@ def get_8k_filings(symbol: str, limit: int = 25) -> list:
     return _fetch_8k(symbol, limit)
 
 
+# Known 10-K section identifiers from Massive's parser. We surface the
+# narrative-rich ones in the UI; others can still be requested by section param.
+FORM10K_SECTION_TITLES = {
+    "business": "Business",
+    "risk_factors": "Risk Factors",
+    "mdna": "MD&A",
+    "properties": "Properties",
+    "legal_proceedings": "Legal Proceedings",
+}
+
+
+def _fetch_10k_sections(ticker: str, limit: int) -> list:
+    """Fetch 10-K narrative sections for a ticker via Massive's REST API."""
+    if not _api_key:
+        return []
+
+    url = "https://api.massive.com/stocks/filings/10-K/vX/sections"
+    params = {
+        "ticker": ticker,
+        "limit": min(max(limit, 1), 99),
+        "sort": "period_end.desc",
+    }
+    headers = {"Authorization": f"Bearer {_api_key}", "Accept-Encoding": "gzip"}
+
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.get(url, params=params, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        print(f"WARN [Massive]: Failed to fetch 10-K for {ticker}: {e}")
+        return []
+
+    return data.get("results") or []
+
+
+def get_10k_sections(symbol: str, limit: int = 20) -> dict:
+    """Fetch latest 10-K sections for a ticker, grouped by section."""
+    rows = _fetch_10k_sections(symbol, limit)
+    if not rows:
+        return {"period_end": None, "filing_date": None, "filing_url": None, "sections": []}
+
+    # Filter to the most recent period_end so the UI shows a single filing.
+    latest_period = rows[0].get("period_end")
+    latest_rows = [r for r in rows if r.get("period_end") == latest_period]
+
+    sections = []
+    for r in latest_rows:
+        section_id = r.get("section") or ""
+        sections.append({
+            "section": section_id,
+            "title": FORM10K_SECTION_TITLES.get(section_id, section_id.replace("_", " ").title() or "Section"),
+            "text": r.get("text") or "",
+        })
+
+    # Stable ordering: business first, risk_factors next, then the rest alphabetically
+    priority = {"business": 0, "risk_factors": 1, "mdna": 2}
+    sections.sort(key=lambda s: (priority.get(s["section"], 99), s["section"]))
+
+    first = latest_rows[0]
+    # filing_url shape: https://www.sec.gov/Archives/edgar/data/{cik}/{accession}.txt
+    filing_url = first.get("filing_url") or ""
+    accession_number = None
+    if filing_url:
+        try:
+            tail = filing_url.rsplit("/", 1)[-1]
+            accession_number = tail.rsplit(".", 1)[0]
+        except Exception:
+            accession_number = None
+
+    return {
+        "period_end": latest_period,
+        "filing_date": first.get("filing_date"),
+        "filing_url": filing_url or None,
+        "cik": first.get("cik"),
+        "accession_number": accession_number,
+        "sections": sections,
+    }
+
+
 class MassiveProvider(DataProviderInterface):
     """Massive data provider implementation."""
 
@@ -991,6 +1071,7 @@ class MassiveProvider(DataProviderInterface):
             "insights": 3600,  # 1 hour
             "form4": 900,      # 15 minutes
             "form8k": 900,     # 15 minutes
+            "form10k": 86400,  # 24 hours (10-K is annual)
         }
 
     def get_historical_data(self, symbol: str, timeframe: str = "1M") -> List[HistoricalBar]:
@@ -1182,3 +1263,15 @@ class MassiveProvider(DataProviderInterface):
         if filings:
             news_cache.set(cache_key, filings)
         return filings
+
+    def get_10k_sections(self, symbol: str) -> Dict[str, Any]:
+        """Get latest 10-K sections (Business, Risk Factors, etc.) for a ticker."""
+        cache_key = f"form10k:{symbol}"
+        cached = news_cache.get(cache_key, self.cache_ttl["form10k"])
+        if cached:
+            return cached
+
+        data = get_10k_sections(symbol)
+        if data.get("sections"):
+            news_cache.set(cache_key, data)
+        return data

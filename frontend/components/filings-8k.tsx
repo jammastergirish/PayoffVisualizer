@@ -10,6 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MarkdownDisplay } from "@/components/markdown-display";
+import { FilingEmbed } from "@/components/filing-embed";
 import { cn } from "@/lib/utils";
 
 const CATEGORY_CLASSES: Record<Filing8kCategory, string> = {
@@ -313,7 +314,7 @@ export function FilingsEightK({ ticker }: FilingsEightKProps) {
 
       {/* Full text modal */}
       <Dialog open={openFiling !== null} onOpenChange={(open) => !open && setOpenFiling(null)}>
-        <DialogContent className="max-w-3xl w-[92vw] h-[65vh] max-h-[65vh] overflow-hidden flex flex-col bg-slate-950 border-white/10 text-white">
+        <DialogContent className="max-w-5xl w-[94vw] h-[90vh] max-h-[90vh] overflow-hidden flex flex-col bg-slate-950 border-white/10 text-white">
           <DialogHeader className="flex-shrink-0 border-b border-white/10 pb-4">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-xs font-mono px-2 py-1 rounded bg-orange-500/20 text-orange-400 uppercase">
@@ -348,10 +349,16 @@ export function FilingsEightK({ ticker }: FilingsEightKProps) {
               </div>
             )}
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto py-4 px-1">
-            <pre className="whitespace-pre-wrap text-sm text-slate-300 leading-relaxed font-sans">
-              {openFiling?.items_text || "No text available"}
-            </pre>
+          <div className="flex-1 min-h-0 py-3 px-1">
+            {openFiling && (
+              <FilingEmbed
+                cik={openFiling.cik}
+                accession={openFiling.accession_number}
+                fallbackUrl={openFiling.filing_url}
+                title={`Form ${openFiling.form_type} — ${openFiling.filing_date}`}
+                className="h-full"
+              />
+            )}
           </div>
         </DialogContent>
       </Dialog>

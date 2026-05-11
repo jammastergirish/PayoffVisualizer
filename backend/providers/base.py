@@ -60,3 +60,7 @@ class DataProviderInterface(ABC):
     def get_8k_filings(self, symbol: str, limit: int = 25) -> List[Dict[str, Any]]:
         """Get recent 8-K filings for a ticker. Default: not supported."""
         return []
+
+    def get_10k_sections(self, symbol: str) -> Dict[str, Any]:
+        """Get latest 10-K narrative sections. Default: not supported."""
+        return {"period_end": None, "filing_date": None, "filing_url": None, "sections": []}

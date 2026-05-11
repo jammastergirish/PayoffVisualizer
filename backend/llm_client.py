@@ -177,3 +177,53 @@ Filings:
 {filings_str}"""
 
     return _call_openai(system_prompt, user_prompt, max_tokens=350)
+
+
+# 10-K sections are long — keep the prompt input bounded. ~30k chars ≈ ~8k tokens.
+MAX_10K_SECTION_CHARS = 30000
+
+
+def analyze_10k_section(ticker: str, section: str, section_title: str, text: str, period_end: Optional[str] = None) -> dict:
+    """
+    Summarize a single 10-K section (e.g. Risk Factors, Business).
+
+    Args:
+        ticker: Stock ticker
+        section: Section identifier (e.g. 'risk_factors')
+        section_title: Display title (e.g. 'Risk Factors')
+        text: Full section text
+        period_end: Period end date of the filing for context
+    """
+    if not text:
+        return format_error_response("No section text provided")
+    if not ticker:
+        return format_error_response("No ticker provided")
+
+    truncated = text.strip()
+    if len(truncated) > MAX_10K_SECTION_CHARS:
+        truncated = truncated[:MAX_10K_SECTION_CHARS] + "\n\n…[truncated for length]"
+
+    period_str = f" (period ending {period_end})" if period_end else ""
+
+    if section == "risk_factors":
+        instruction = (
+            "Identify the top 5–7 most material risks. Group similar risks. "
+            "Call out anything that looks new, unusual, or company-specific (as opposed to boilerplate language that every 10-K has). "
+            "Format as a markdown bullet list with a one-line rationale per item."
+        )
+    elif section == "business":
+        instruction = (
+            "Summarize what the company does, its segments, key products/markets, and competitive positioning. "
+            "Format as: a 2–3 sentence overview followed by a markdown bullet list of segments or business lines."
+        )
+    else:
+        instruction = "Summarize the key points in a markdown bullet list of 5–7 items, with brief context."
+
+    system_prompt = "You are an experienced equity analyst who turns dense SEC filings into the kind of crisp summary a portfolio manager would actually read."
+    user_prompt = (
+        f"Below is the '{section_title}' section from {ticker.upper()}'s most recent 10-K{period_str}.\n\n"
+        f"{instruction}\n\n"
+        f"--- BEGIN SECTION ---\n{truncated}\n--- END SECTION ---"
+    )
+
+    return _call_openai(system_prompt, user_prompt, max_tokens=600)

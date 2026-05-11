@@ -6,11 +6,14 @@ from contextlib import asynccontextmanager
 from typing import Optional, Literal, List
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
+import httpx
+from .common.cache import news_cache
 
 from .config import config
 from .providers.factory import DataProviderFactory
-from .llm_client import analyze_market_news, analyze_ticker_news, analyze_8k_filings
+from .llm_client import analyze_market_news, analyze_ticker_news, analyze_8k_filings, analyze_10k_section
 from .common.models import TradeOrder
 from .common.utils import validate_symbol, format_error_response
 from .common.cache import options_cache, historical_cache, snapshot_cache
@@ -362,6 +365,147 @@ def get_8k_filings(symbol: str, limit: int = 25):
     return {"symbol": sym, "filings": filings, "provider": NEWS_PROVIDER}
 
 
+# ==================
+# SEC EDGAR proxy + filing document resolver
+#
+# SEC sends X-Frame-Options: SAMEORIGIN, so we can't iframe sec.gov pages from
+# our origin. We proxy the HTML through here (same-origin → no XFO issue) and
+# inject <base href> so the document's relative images/CSS still load directly
+# from sec.gov.
+# ==================
+
+# SEC requires a User-Agent identifying who's accessing. Configurable via env.
+_SEC_UA = os.getenv("SEC_USER_AGENT") or "PayoffDiagrams (girish@girishgupta.com)"
+
+
+def _normalize_cik(cik: str) -> str:
+    """Strip leading zeros from a CIK so it matches the path format."""
+    digits = "".join(ch for ch in str(cik) if ch.isdigit())
+    return str(int(digits)) if digits else ""
+
+
+def _accession_no_dashes(accession: str) -> str:
+    return str(accession).replace("-", "")
+
+
+@app.get("/api/sec-filing-doc")
+def get_sec_filing_doc(cik: str, accession: str):
+    """
+    Resolve the primary document URL for a SEC filing on EDGAR.
+
+    Args:
+        cik: SEC CIK (with or without zero-padding)
+        accession: Accession number (e.g., '0000320193-25-000079')
+    """
+    cik_int = _normalize_cik(cik)
+    if not cik_int:
+        return {"error": "invalid CIK"}
+    acc_nodash = _accession_no_dashes(accession)
+
+    cache_key = f"sec-doc:{cik_int}:{acc_nodash}"
+    cached = news_cache.get(cache_key, 86400 * 7)  # filings are immutable
+    if cached:
+        return cached
+
+    sub_url = f"https://data.sec.gov/submissions/CIK{int(cik_int):010d}.json"
+    primary_doc = None
+    form_type = None
+    try:
+        with httpx.Client(timeout=15.0, headers={"User-Agent": _SEC_UA}) as client:
+            resp = client.get(sub_url)
+            resp.raise_for_status()
+            data = resp.json()
+        recent = data.get("filings", {}).get("recent", {}) or {}
+        accs = recent.get("accessionNumber", []) or []
+        docs = recent.get("primaryDocument", []) or []
+        forms = recent.get("form", []) or []
+        for i, a in enumerate(accs):
+            if a == accession:
+                primary_doc = docs[i] if i < len(docs) else None
+                form_type = forms[i] if i < len(forms) else None
+                break
+    except Exception as e:
+        return {"error": f"failed to resolve: {e}"}
+
+    if not primary_doc:
+        return {"error": "filing not found in recent submissions"}
+
+    primary_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/{primary_doc}"
+    index_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/{accession}-index.htm"
+    result = {
+        "url": primary_url,
+        "index_url": index_url,
+        "primary_document": primary_doc,
+        "form_type": form_type,
+    }
+    news_cache.set(cache_key, result)
+    return result
+
+
+@app.get("/api/sec-proxy")
+def sec_proxy(url: str):
+    """
+    Same-origin proxy for SEC EDGAR documents.
+
+    Only sec.gov URLs are allowed. For HTML responses, a <base href> tag is
+    injected pointing back to the document's directory on sec.gov so relative
+    resources (images, CSS, etc.) still load directly from SEC.
+    """
+    # Allowlist: only proxy SEC documents
+    if not (url.startswith("https://www.sec.gov/Archives/") or url.startswith("https://www.sec.gov/cgi-bin/")):
+        return Response(content="URL not allowed", status_code=400)
+
+    try:
+        with httpx.Client(timeout=30.0, headers={"User-Agent": _SEC_UA}, follow_redirects=True) as client:
+            resp = client.get(url)
+    except Exception as e:
+        return Response(content=f"Upstream error: {e}", status_code=502)
+
+    content_type = resp.headers.get("content-type", "application/octet-stream")
+    body = resp.content
+
+    # If HTML, inject <base href> so relative URLs resolve back to sec.gov.
+    if "html" in content_type.lower():
+        try:
+            import re as _re
+            html = body.decode("utf-8", errors="replace")
+            base_dir = url.rsplit("/", 1)[0] + "/"
+            base_tag = f'<base href="{base_dir}" target="_blank">'
+            # Match <head ...> (XHTML may include attributes); case-insensitive
+            head_match = _re.search(r"<head(\s[^>]*)?>", html, _re.IGNORECASE)
+            if head_match:
+                insert_at = head_match.end()
+                html = html[:insert_at] + base_tag + html[insert_at:]
+            else:
+                # Try injecting after <html ...> instead
+                html_match = _re.search(r"<html(\s[^>]*)?>", html, _re.IGNORECASE)
+                if html_match:
+                    insert_at = html_match.end()
+                    html = html[:insert_at] + f"<head>{base_tag}</head>" + html[insert_at:]
+                else:
+                    html = f"<head>{base_tag}</head>" + html
+            body = html.encode("utf-8")
+        except Exception:
+            pass  # serve as-is on failure
+
+    # Strip frame-blocking headers — we serve same-origin so iframe will work
+    headers = {"Content-Type": content_type, "Cache-Control": "public, max-age=86400"}
+    return Response(content=body, status_code=resp.status_code, headers=headers)
+
+
+@app.get("/api/filings-10k/{symbol}")
+def get_10k_sections(symbol: str):
+    """
+    Get the latest SEC Form 10-K narrative sections for a ticker.
+
+    Returns the most recent annual filing's parsed sections (Business,
+    Risk Factors, MD&A, etc.).
+    """
+    sym = validate_symbol(symbol)
+    data = news_provider.get_10k_sections(sym)
+    return {"symbol": sym, **data, "provider": NEWS_PROVIDER}
+
+
 @app.get("/api/insider-history/{owner_cik}")
 def get_insider_history(owner_cik: str, limit: int = 100):
     """
@@ -480,6 +624,13 @@ class Filing8kAnalysisRequest(BaseModel):
     filings: list[Filing8kForAnalysis]
     ticker: str
 
+class Filing10kSectionAnalysisRequest(BaseModel):
+    ticker: str
+    section: str
+    section_title: str
+    text: str
+    period_end: str | None = None
+
 
 @app.post("/api/llm/analyze-market-news")
 def llm_analyze_market_news(request: MarketNewsAnalysisRequest):
@@ -498,6 +649,18 @@ def llm_analyze_8k(request: Filing8kAnalysisRequest):
     """Analyze recent 8-K filings for a specific ticker using LLM."""
     filings = [f.model_dump() for f in request.filings]
     return analyze_8k_filings(filings, request.ticker)
+
+
+@app.post("/api/llm/analyze-10k-section")
+def llm_analyze_10k_section(request: Filing10kSectionAnalysisRequest):
+    """Summarize a single 10-K section (Business, Risk Factors, etc.) using LLM."""
+    return analyze_10k_section(
+        ticker=request.ticker,
+        section=request.section,
+        section_title=request.section_title,
+        text=request.text,
+        period_end=request.period_end,
+    )
 
 
 @app.post("/api/llm/analyze-ticker-news")

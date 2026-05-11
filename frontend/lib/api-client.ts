@@ -355,6 +355,97 @@ export async function fetchEightKFilings(
     );
 }
 
+// =====================
+// SEC 10-K Sections API
+// =====================
+
+export interface TenKSection {
+    section: string;
+    title: string;
+    text: string;
+}
+
+export interface TenKFiling {
+    symbol: string;
+    period_end: string | null;
+    filing_date: string | null;
+    filing_url: string | null;
+    cik: string | null;
+    accession_number: string | null;
+    sections: TenKSection[];
+    provider: string;
+}
+
+// =====================
+// SEC filing document resolver
+// =====================
+
+export interface SecFilingDoc {
+    url?: string;
+    index_url?: string;
+    primary_document?: string;
+    form_type?: string;
+    error?: string;
+}
+
+export async function fetchSecFilingDoc(cik: string, accession: string): Promise<SecFilingDoc> {
+    return apiRequest<SecFilingDoc>(
+        `/api/sec-filing-doc?cik=${encodeURIComponent(cik)}&accession=${encodeURIComponent(accession)}`,
+        undefined,
+        { error: "fetch failed" }
+    );
+}
+
+/** URL of the same-origin proxy that serves a SEC document. */
+export function secProxyUrl(secUrl: string): string {
+    return `${API_BASE}/api/sec-proxy?url=${encodeURIComponent(secUrl)}`;
+}
+
+export async function fetchTenKSections(symbol: string): Promise<TenKFiling> {
+    return apiRequest(
+        `/api/filings-10k/${symbol}`,
+        undefined,
+        {
+            symbol,
+            period_end: null,
+            filing_date: null,
+            filing_url: null,
+            sections: [],
+            provider: "unknown",
+        }
+    );
+}
+
+export async function fetchTenKAnalysis(args: {
+    ticker: string;
+    section: string;
+    section_title: string;
+    text: string;
+    period_end?: string | null;
+}): Promise<LLMAnalysisResponse> {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+        const res = await fetch(`${API_BASE}/api/llm/analyze-10k-section`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(args),
+            signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error("Failed to analyze 10-K section");
+        return await res.json();
+    } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") {
+            return { error: "Analysis request timed out" };
+        }
+        console.error(e);
+        return { error: e instanceof Error ? e.message : "Failed to analyze section" };
+    }
+}
+
 export async function fetchEightKAnalysis(
     filings: Array<{ filing_date?: string | null; items?: { code: string; title?: string | null }[]; items_text?: string | null }>,
     ticker: string
