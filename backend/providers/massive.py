@@ -1,6 +1,7 @@
 """Massive data provider implementation."""
 
 import os
+import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import httpx
@@ -887,6 +888,97 @@ def get_insider_history(owner_cik: str, limit: int = 100) -> list:
     return _fetch_form4({"owner_cik": cik}, limit, log_label=f"owner={cik}")
 
 
+# SEC Form 8-K item codes — mapped to a short title and category bucket so
+# the UI can color-code and filter by event type.
+FORM8K_ITEM_META = {
+    "1.01": {"title": "Entry into Material Agreement", "category": "agreement"},
+    "1.02": {"title": "Termination of Material Agreement", "category": "agreement"},
+    "1.03": {"title": "Bankruptcy or Receivership", "category": "distress"},
+    "1.04": {"title": "Mine Safety", "category": "other"},
+    "2.01": {"title": "Completed Acquisition/Disposition", "category": "m_and_a"},
+    "2.02": {"title": "Results of Operations", "category": "earnings"},
+    "2.03": {"title": "Material Direct Obligation", "category": "distress"},
+    "2.04": {"title": "Triggering Event", "category": "distress"},
+    "2.05": {"title": "Exit / Disposal Costs", "category": "distress"},
+    "2.06": {"title": "Material Impairment", "category": "distress"},
+    "3.01": {"title": "Notice of Delisting", "category": "distress"},
+    "3.02": {"title": "Unregistered Equity Sale", "category": "securities"},
+    "3.03": {"title": "Modification of Rights", "category": "securities"},
+    "4.01": {"title": "Auditor Change", "category": "governance"},
+    "4.02": {"title": "Non-Reliance on Financials", "category": "distress"},
+    "5.01": {"title": "Change in Control", "category": "leadership"},
+    "5.02": {"title": "Officer / Director Change", "category": "leadership"},
+    "5.03": {"title": "Bylaws / Charter Amendment", "category": "governance"},
+    "5.04": {"title": "Trading Plan Suspension", "category": "governance"},
+    "5.05": {"title": "Ethics Code Amendment", "category": "governance"},
+    "5.07": {"title": "Shareholder Vote", "category": "governance"},
+    "5.08": {"title": "Shareholder Nominations", "category": "governance"},
+    "7.01": {"title": "Reg FD Disclosure", "category": "regfd"},
+    "8.01": {"title": "Other Events", "category": "other"},
+    "9.01": {"title": "Exhibits", "category": "other"},
+}
+
+
+_ITEM_REGEX = re.compile(r"Item\s+(\d{1,2}\.\d{2})", re.IGNORECASE)
+
+
+def _parse_8k_items(items_text: Optional[str]) -> list:
+    """Extract item codes from an 8-K body and annotate them."""
+    if not items_text:
+        return []
+    found = []
+    seen = set()
+    for m in _ITEM_REGEX.finditer(items_text):
+        code = m.group(1)
+        if code in seen:
+            continue
+        seen.add(code)
+        meta = FORM8K_ITEM_META.get(code, {"title": "Other Item", "category": "other"})
+        found.append({"code": code, "title": meta["title"], "category": meta["category"]})
+    return found
+
+
+def _annotate_8k_row(row: dict) -> dict:
+    """Add item-code classification and constructed SEC URL to an 8-K row."""
+    row["items"] = _parse_8k_items(row.get("items_text"))
+    # Categories present, deduped, for filter chips
+    row["categories"] = sorted({i["category"] for i in row["items"]})
+    if not row.get("filing_url"):
+        row["filing_url"] = _build_sec_filing_url(row.get("cik"), row.get("accession_number"))
+    return row
+
+
+def _fetch_8k(ticker: str, limit: int) -> list:
+    """Fetch parsed 8-K filings for a ticker via Massive's REST API."""
+    if not _api_key:
+        return []
+
+    url = "https://api.massive.com/stocks/filings/8-K/vX/text"
+    params = {
+        "ticker": ticker,
+        "limit": min(max(limit, 1), 99),
+        "sort": "filing_date.desc",
+    }
+    headers = {"Authorization": f"Bearer {_api_key}", "Accept-Encoding": "gzip"}
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(url, params=params, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        print(f"WARN [Massive]: Failed to fetch 8-K for {ticker}: {e}")
+        return []
+
+    results = data.get("results") or []
+    return [_annotate_8k_row(row) for row in results]
+
+
+def get_8k_filings(symbol: str, limit: int = 25) -> list:
+    """Fetch recent 8-K filings for a ticker."""
+    return _fetch_8k(symbol, limit)
+
+
 class MassiveProvider(DataProviderInterface):
     """Massive data provider implementation."""
 
@@ -898,6 +990,7 @@ class MassiveProvider(DataProviderInterface):
             "options": None,   # Dynamic based on market hours
             "insights": 3600,  # 1 hour
             "form4": 900,      # 15 minutes
+            "form8k": 900,     # 15 minutes
         }
 
     def get_historical_data(self, symbol: str, timeframe: str = "1M") -> List[HistoricalBar]:
@@ -1077,3 +1170,15 @@ class MassiveProvider(DataProviderInterface):
         if trades:
             news_cache.set(cache_key, trades)
         return trades
+
+    def get_8k_filings(self, symbol: str, limit: int = 25) -> List[Dict[str, Any]]:
+        """Get recent 8-K filings for a ticker from Massive."""
+        cache_key = f"form8k:{symbol}:{limit}"
+        cached = news_cache.get(cache_key, self.cache_ttl["form8k"])
+        if cached:
+            return cached
+
+        filings = get_8k_filings(symbol, limit)
+        if filings:
+            news_cache.set(cache_key, filings)
+        return filings

@@ -311,6 +311,77 @@ export async function fetchInsiderHistory(
     );
 }
 
+// =====================
+// SEC 8-K Filings API
+// =====================
+
+export type Filing8kCategory =
+    | "earnings"
+    | "m_and_a"
+    | "leadership"
+    | "agreement"
+    | "distress"
+    | "securities"
+    | "governance"
+    | "regfd"
+    | "other";
+
+export interface Filing8kItem {
+    code: string;
+    title: string;
+    category: Filing8kCategory;
+}
+
+export interface Filing8k {
+    accession_number: string;
+    cik: string;
+    filing_date: string;
+    filing_url: string | null;
+    form_type: string;
+    items_text: string | null;
+    items: Filing8kItem[];
+    categories: Filing8kCategory[];
+    ticker: string;
+}
+
+export async function fetchEightKFilings(
+    symbol: string,
+    limit: number = 25
+): Promise<{ symbol: string; filings: Filing8k[]; provider: string }> {
+    return apiRequest(
+        `/api/filings-8k/${symbol}?limit=${limit}`,
+        undefined,
+        { symbol, filings: [], provider: "unknown" }
+    );
+}
+
+export async function fetchEightKAnalysis(
+    filings: Array<{ filing_date?: string | null; items?: { code: string; title?: string | null }[]; items_text?: string | null }>,
+    ticker: string
+): Promise<LLMAnalysisResponse> {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+        const res = await fetch(`${API_BASE}/api/llm/analyze-8k`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filings, ticker }),
+            signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error("Failed to analyze 8-K filings");
+        return await res.json();
+    } catch (e) {
+        if (e instanceof Error && e.name === "AbortError") {
+            return { error: "Analysis request timed out" };
+        }
+        console.error(e);
+        return { error: e instanceof Error ? e.message : "Failed to analyze filings" };
+    }
+}
+
 
 // =====================
 // Daily Snapshot API

@@ -56,3 +56,7 @@ class DataProviderInterface(ABC):
     def get_insider_history(self, owner_cik: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get an insider's Form 4 history across companies. Default: not supported."""
         return []
+
+    def get_8k_filings(self, symbol: str, limit: int = 25) -> List[Dict[str, Any]]:
+        """Get recent 8-K filings for a ticker. Default: not supported."""
+        return []

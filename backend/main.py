@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from .config import config
 from .providers.factory import DataProviderFactory
-from .llm_client import analyze_market_news, analyze_ticker_news
+from .llm_client import analyze_market_news, analyze_ticker_news, analyze_8k_filings
 from .common.models import TradeOrder
 from .common.utils import validate_symbol, format_error_response
 from .common.cache import options_cache, historical_cache, snapshot_cache
@@ -348,6 +348,20 @@ def get_insider_trades(symbol: str, limit: int = 50):
     return {"symbol": sym, "trades": trades, "provider": NEWS_PROVIDER}
 
 
+@app.get("/api/filings-8k/{symbol}")
+def get_8k_filings(symbol: str, limit: int = 25):
+    """
+    Get recent SEC Form 8-K filings (current reports) for a ticker.
+
+    Args:
+        symbol: Stock ticker (e.g., AAPL)
+        limit: Max number of filings (default 25, max 99)
+    """
+    sym = validate_symbol(symbol)
+    filings = news_provider.get_8k_filings(sym, limit)
+    return {"symbol": sym, "filings": filings, "provider": NEWS_PROVIDER}
+
+
 @app.get("/api/insider-history/{owner_cik}")
 def get_insider_history(owner_cik: str, limit: int = 100):
     """
@@ -453,6 +467,19 @@ class TickerNewsAnalysisRequest(BaseModel):
     articles: list[ArticleForAnalysis]
     ticker: str
 
+class FilingItem(BaseModel):
+    code: str
+    title: str | None = None
+
+class Filing8kForAnalysis(BaseModel):
+    filing_date: str | None = None
+    items: list[FilingItem] = []
+    items_text: str | None = None
+
+class Filing8kAnalysisRequest(BaseModel):
+    filings: list[Filing8kForAnalysis]
+    ticker: str
+
 
 @app.post("/api/llm/analyze-market-news")
 def llm_analyze_market_news(request: MarketNewsAnalysisRequest):
@@ -466,11 +493,18 @@ def llm_analyze_market_news(request: MarketNewsAnalysisRequest):
     return result
 
 
+@app.post("/api/llm/analyze-8k")
+def llm_analyze_8k(request: Filing8kAnalysisRequest):
+    """Analyze recent 8-K filings for a specific ticker using LLM."""
+    filings = [f.model_dump() for f in request.filings]
+    return analyze_8k_filings(filings, request.ticker)
+
+
 @app.post("/api/llm/analyze-ticker-news")
 def llm_analyze_ticker_news(request: TickerNewsAnalysisRequest):
     """
     Analyze news articles for a specific ticker using LLM.
-    
+
     Returns AI-generated summary of how articles affect the stock.
     """
     articles = [a.model_dump() for a in request.articles]

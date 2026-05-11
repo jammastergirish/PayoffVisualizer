@@ -142,3 +142,38 @@ Articles:
 {articles_str}"""
 
     return _call_openai(system_prompt, user_prompt, max_tokens=300)
+
+
+def analyze_8k_filings(filings: list[dict], ticker: str) -> dict:
+    """
+    Analyze recent 8-K filings for a specific ticker.
+
+    Args:
+        filings: List of dicts with filing_date, items (list of {code,title}), items_text
+        ticker: Stock ticker symbol (e.g., "AAPL")
+
+    Returns:
+        Dict with 'summary' string or 'error' if failed
+    """
+    if not filings:
+        return format_error_response("No filings provided")
+    if not ticker:
+        return format_error_response("No ticker provided")
+
+    formatted = []
+    for i, f in enumerate(filings[:MAX_ARTICLES], 1):
+        items = f.get("items") or []
+        item_str = ", ".join(f"Item {it.get('code')} ({it.get('title')})" for it in items) or "Unspecified"
+        body = (f.get("items_text") or "").strip()
+        if len(body) > 1500:
+            body = body[:1500] + "…"
+        formatted.append(f"{i}. {f.get('filing_date', '')} — {item_str}\n{body}")
+    filings_str = "\n\n".join(formatted)
+
+    system_prompt = "You are Matt Levine providing brief, actionable insights on how SEC 8-K disclosures affect individual stocks. Be witty, direct, and call out which items are mundane Reg FD vs genuinely material."
+    user_prompt = f"""Based on these recent 8-K filings for {ticker.upper()}, what's the material signal and likely price impact? Highlight earnings, M&A, leadership changes, and material agreements; downweight Reg FD housekeeping. Give a summary in 150 words—and brief advice.
+
+Filings:
+{filings_str}"""
+
+    return _call_openai(system_prompt, user_prompt, max_tokens=350)
