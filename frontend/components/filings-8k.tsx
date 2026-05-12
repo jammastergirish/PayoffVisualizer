@@ -314,7 +314,10 @@ export function FilingsEightK({ ticker }: FilingsEightKProps) {
 
       {/* Full text modal */}
       <Dialog open={openFiling !== null} onOpenChange={(open) => !open && setOpenFiling(null)}>
-        <DialogContent className="max-w-5xl w-[94vw] h-[90vh] max-h-[90vh] overflow-hidden flex flex-col bg-slate-950 border-white/10 text-white">
+        <DialogContent
+          style={{ maxWidth: "75vw", width: "75vw" }}
+          className="h-[92vh] max-h-[92vh] overflow-hidden flex flex-col bg-slate-950 border-white/10 text-white"
+        >
           <DialogHeader className="flex-shrink-0 border-b border-white/10 pb-4">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-xs font-mono px-2 py-1 rounded bg-orange-500/20 text-orange-400 uppercase">

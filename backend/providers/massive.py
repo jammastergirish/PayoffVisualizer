@@ -843,35 +843,53 @@ def _annotate_form4_row(row: dict) -> dict:
     return row
 
 
-def _fetch_form4(query_params: dict, limit: int, log_label: str) -> list:
-    """Fetch SEC Form 4 filings via Massive's REST API.
+_MASSIVE_BASE = "https://api.massive.com"
 
-    The Python SDK does not yet expose list_form_4, so we call the endpoint
-    directly with the configured API key. `query_params` should contain the
-    filter (e.g. {"tickers": "AAPL"} or {"owner_cik": "0001214156"}).
+
+def _cached(cache, key: str, ttl: Optional[int], fetcher, is_valid=bool):
+    """Return a cached value (truthy) if present; otherwise call `fetcher` and
+    cache the result when `is_valid(result)` is True. Mirrors the existing
+    pattern in MassiveProvider so callers can stay one-liners.
+    """
+    hit = cache.get(key, ttl)
+    if hit:
+        return hit
+    value = fetcher()
+    if is_valid(value):
+        cache.set(key, value)
+    return value
+
+
+def _massive_get(path: str, params: dict, log_label: str, timeout: float = 15.0) -> list:
+    """GET a Massive REST endpoint and return the `results` array.
+
+    Returns [] on missing API key or any error (logged). The Python SDK
+    doesn't yet expose every filings endpoint we need, so a few callers go
+    through this raw helper.
     """
     if not _api_key:
         return []
+    headers = {"Authorization": f"Bearer {_api_key}", "Accept-Encoding": "gzip"}
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.get(f"{_MASSIVE_BASE}{path}", params=params, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        print(f"WARN [Massive]: GET {path} ({log_label}) failed: {e}")
+        return []
+    return data.get("results") or []
 
-    url = "https://api.massive.com/stocks/filings/vX/form-4"
+
+def _fetch_form4(query_params: dict, limit: int, log_label: str) -> list:
+    """Fetch SEC Form 4 filings via Massive's REST API."""
     params = {
         **query_params,
         "limit": min(max(limit, 1), 1000),
         "sort": "filing_date.desc",
     }
-    headers = {"Authorization": f"Bearer {_api_key}", "Accept-Encoding": "gzip"}
-
-    try:
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.get(url, params=params, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as e:
-        print(f"WARN [Massive]: Failed to fetch Form 4 for {log_label}: {e}")
-        return []
-
-    results = data.get("results") or []
-    return [_annotate_form4_row(row) for row in results]
+    rows = _massive_get("/stocks/filings/vX/form-4", params, log_label)
+    return [_annotate_form4_row(row) for row in rows]
 
 
 def get_insider_trades(symbol: str, limit: int = 50) -> list:
@@ -950,28 +968,13 @@ def _annotate_8k_row(row: dict) -> dict:
 
 def _fetch_8k(ticker: str, limit: int) -> list:
     """Fetch parsed 8-K filings for a ticker via Massive's REST API."""
-    if not _api_key:
-        return []
-
-    url = "https://api.massive.com/stocks/filings/8-K/vX/text"
     params = {
         "ticker": ticker,
         "limit": min(max(limit, 1), 99),
         "sort": "filing_date.desc",
     }
-    headers = {"Authorization": f"Bearer {_api_key}", "Accept-Encoding": "gzip"}
-
-    try:
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.get(url, params=params, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as e:
-        print(f"WARN [Massive]: Failed to fetch 8-K for {ticker}: {e}")
-        return []
-
-    results = data.get("results") or []
-    return [_annotate_8k_row(row) for row in results]
+    rows = _massive_get("/stocks/filings/8-K/vX/text", params, ticker)
+    return [_annotate_8k_row(row) for row in rows]
 
 
 def get_8k_filings(symbol: str, limit: int = 25) -> list:
@@ -992,27 +995,12 @@ FORM10K_SECTION_TITLES = {
 
 def _fetch_10k_sections(ticker: str, limit: int) -> list:
     """Fetch 10-K narrative sections for a ticker via Massive's REST API."""
-    if not _api_key:
-        return []
-
-    url = "https://api.massive.com/stocks/filings/10-K/vX/sections"
     params = {
         "ticker": ticker,
         "limit": min(max(limit, 1), 99),
         "sort": "period_end.desc",
     }
-    headers = {"Authorization": f"Bearer {_api_key}", "Accept-Encoding": "gzip"}
-
-    try:
-        with httpx.Client(timeout=20.0) as client:
-            resp = client.get(url, params=params, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as e:
-        print(f"WARN [Massive]: Failed to fetch 10-K for {ticker}: {e}")
-        return []
-
-    return data.get("results") or []
+    return _massive_get("/stocks/filings/10-K/vX/sections", params, ticker, timeout=20.0)
 
 
 def get_10k_sections(symbol: str, limit: int = 20) -> dict:
@@ -1076,143 +1064,79 @@ class MassiveProvider(DataProviderInterface):
 
     def get_historical_data(self, symbol: str, timeframe: str = "1M") -> List[HistoricalBar]:
         """Get historical price data from Massive."""
-        cache_key = f"{symbol}:{timeframe}"
-
-        # Check cache
-        cached = historical_cache.get(cache_key, self.cache_ttl["historical"])
-        if cached:
-            return cached
-
-        # Fetch from Massive
-        data = get_historical_bars(symbol, timeframe)
-
-        if "error" not in data and "bars" in data:
-            # Convert to HistoricalBar objects
-            bars = []
-            for bar_dict in data["bars"]:
-                bar = HistoricalBar(
-                    date=datetime.fromisoformat(bar_dict["date"]),
-                    open=bar_dict["open"],
-                    high=bar_dict["high"],
-                    low=bar_dict["low"],
-                    close=bar_dict["close"],
-                    volume=bar_dict["volume"]
+        def fetch() -> List[HistoricalBar]:
+            data = get_historical_bars(symbol, timeframe)
+            if "error" in data or "bars" not in data:
+                return []
+            return [
+                HistoricalBar(
+                    date=datetime.fromisoformat(b["date"]),
+                    open=b["open"],
+                    high=b["high"],
+                    low=b["low"],
+                    close=b["close"],
+                    volume=b["volume"],
                 )
-                bars.append(bar)
-
-            # Cache the result
-            historical_cache.set(cache_key, bars)
-            return bars
-
-        return []
+                for b in data["bars"]
+            ]
+        return _cached(historical_cache, f"{symbol}:{timeframe}", self.cache_ttl["historical"], fetch)
 
     def get_ticker_details(self, symbol: str) -> Dict[str, Any]:
         """Get ticker company details from Massive."""
-        # This typically doesn't change often, could use longer cache
-        cache_key = f"details:{symbol}"
-        cached = news_cache.get(cache_key, 3600)  # 1 hour cache
-        if cached:
-            return cached
-
-        data = get_ticker_details(symbol)
-        if "error" not in data:
-            news_cache.set(cache_key, data)
-        return data
+        return _cached(
+            news_cache,
+            f"details:{symbol}",
+            3600,  # company details change rarely
+            lambda: get_ticker_details(symbol),
+            is_valid=lambda d: "error" not in d,
+        )
 
     def get_daily_snapshot(self, symbol: str) -> Dict[str, Any]:
         """Get daily price snapshot from Massive."""
-        cache_key = f"snapshot:{symbol}"
-
-        cached = snapshot_cache.get(cache_key, self.cache_ttl["snapshot"])
-        if cached:
-            return cached
-
-        data = get_daily_snapshot(symbol)
-        if "error" not in data:
-            snapshot_cache.set(cache_key, data)
-        return data
+        return _cached(
+            snapshot_cache,
+            f"snapshot:{symbol}",
+            self.cache_ttl["snapshot"],
+            lambda: get_daily_snapshot(symbol),
+            is_valid=lambda d: "error" not in d,
+        )
 
     def get_news(self, symbol: str, limit: int = 15) -> List[Dict[str, Any]]:
         """Get news headlines for a ticker from Massive."""
-        cache_key = f"news:{symbol}"
-
-        cached = news_cache.get(cache_key, self.cache_ttl["news"])
-        if cached:
-            return cached
-
-        data = get_news(symbol, limit)
-        if "headlines" in data:
-             news_cache.set(cache_key, data["headlines"])
-             return data["headlines"]
-        return []
-
-    def get_market_news(self, limit: int = 25) -> List[Dict[str, Any]]:
-        """Get general market news from Massive."""
-        # Market news not ticker specific, cache globally?
-        cache_key = "market_news"
-        # Since we use shared news_cache, ensure key doesn't collide with tickers
-        
-        cached = news_cache.get(cache_key, self.cache_ttl["news"])
-        if cached:
-            return cached
-            
-        data = get_market_news(limit)
-        if "headlines" in data:
-             news_cache.set(cache_key, data["headlines"])
-             return data["headlines"]
-        return []
-
-    def get_news_article(self, article_id: str) -> Dict[str, Any]:
-        """Get full news article from Massive."""
-        return get_news_article(article_id)
-
-    def get_options_chain(self, symbol: str, max_strikes: int = 30) -> Dict[str, Any]:
-        """Get options chain data from Massive."""
-        return get_options_chain(symbol, max_strikes)
+        return _cached(
+            news_cache,
+            f"news:{symbol}",
+            self.cache_ttl["news"],
+            lambda: get_news(symbol, limit).get("headlines", []),
+        )
 
     def get_analyst_insights(self, symbol: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Get analyst ratings and insights from Massive."""
-        cache_key = f"insights:{symbol}"
-        cached = news_cache.get(cache_key, self.cache_ttl["insights"])
-        if cached:
-            return cached
-
-        insights = get_analyst_insights(symbol, limit)
-        if insights:
-            news_cache.set(cache_key, insights)
-        return insights
-        if "headlines" in data:
-            news_cache.set(cache_key, data["headlines"])
-            return data["headlines"]
-        return []
+        return _cached(
+            news_cache,
+            f"insights:{symbol}",
+            self.cache_ttl["insights"],
+            lambda: get_analyst_insights(symbol, limit),
+        )
 
     def get_market_news(self, limit: int = 25) -> List[Dict[str, Any]]:
         """Get general market news from Massive."""
-        cache_key = "news:market"
-
-        cached = news_cache.get(cache_key, self.cache_ttl["news"])
-        if cached:
-            return cached
-
-        data = get_market_news(limit)
-        if "headlines" in data:
-            news_cache.set(cache_key, data["headlines"])
-            return data["headlines"]
-        return []
+        return _cached(
+            news_cache,
+            "news:market",
+            self.cache_ttl["news"],
+            lambda: get_market_news(limit).get("headlines", []),
+        )
 
     def get_news_article(self, article_id: str) -> Dict[str, Any]:
         """Get full news article from Massive."""
-        cache_key = f"article:{article_id}"
-
-        # Articles don't change, cache for longer
-        cached = news_cache.get(cache_key, 3600)  # 1 hour
-        if cached:
-            return cached
-
-        data = get_news_article(article_id)
-        if "error" not in data:
-            news_cache.set(cache_key, data)
-        return data
+        return _cached(
+            news_cache,
+            f"article:{article_id}",
+            3600,  # articles are immutable
+            lambda: get_news_article(article_id),
+            is_valid=lambda d: "error" not in d,
+        )
 
     def get_options_chain(self, symbol: str, max_strikes: int = 30) -> Dict[str, Any]:
         """Get options chain data from Massive."""
@@ -1230,48 +1154,37 @@ class MassiveProvider(DataProviderInterface):
 
     def get_insider_trades(self, symbol: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Get SEC Form 4 insider transactions from Massive."""
-        cache_key = f"form4:{symbol}:{limit}"
-        cached = news_cache.get(cache_key, self.cache_ttl["form4"])
-        if cached:
-            return cached
-
-        trades = get_insider_trades(symbol, limit)
-        if trades:
-            news_cache.set(cache_key, trades)
-        return trades
+        return _cached(
+            news_cache,
+            f"form4:{symbol}:{limit}",
+            self.cache_ttl["form4"],
+            lambda: get_insider_trades(symbol, limit),
+        )
 
     def get_insider_history(self, owner_cik: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get all SEC Form 4 transactions for a single insider across companies."""
-        cache_key = f"form4:owner:{owner_cik}:{limit}"
-        cached = news_cache.get(cache_key, self.cache_ttl["form4"])
-        if cached:
-            return cached
-
-        trades = get_insider_history(owner_cik, limit)
-        if trades:
-            news_cache.set(cache_key, trades)
-        return trades
+        return _cached(
+            news_cache,
+            f"form4:owner:{owner_cik}:{limit}",
+            self.cache_ttl["form4"],
+            lambda: get_insider_history(owner_cik, limit),
+        )
 
     def get_8k_filings(self, symbol: str, limit: int = 25) -> List[Dict[str, Any]]:
         """Get recent 8-K filings for a ticker from Massive."""
-        cache_key = f"form8k:{symbol}:{limit}"
-        cached = news_cache.get(cache_key, self.cache_ttl["form8k"])
-        if cached:
-            return cached
-
-        filings = get_8k_filings(symbol, limit)
-        if filings:
-            news_cache.set(cache_key, filings)
-        return filings
+        return _cached(
+            news_cache,
+            f"form8k:{symbol}:{limit}",
+            self.cache_ttl["form8k"],
+            lambda: get_8k_filings(symbol, limit),
+        )
 
     def get_10k_sections(self, symbol: str) -> Dict[str, Any]:
         """Get latest 10-K sections (Business, Risk Factors, etc.) for a ticker."""
-        cache_key = f"form10k:{symbol}"
-        cached = news_cache.get(cache_key, self.cache_ttl["form10k"])
-        if cached:
-            return cached
-
-        data = get_10k_sections(symbol)
-        if data.get("sections"):
-            news_cache.set(cache_key, data)
-        return data
+        return _cached(
+            news_cache,
+            f"form10k:{symbol}",
+            self.cache_ttl["form10k"],
+            lambda: get_10k_sections(symbol),
+            is_valid=lambda d: bool(d.get("sections")),
+        )
