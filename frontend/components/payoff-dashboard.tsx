@@ -25,6 +25,7 @@ import { AnalystInsights } from "@/components/analyst-insights";
 import { InsiderTrades } from "@/components/insider-trades";
 import { FilingsEightK } from "@/components/filings-8k";
 import { FilingsTenK } from "@/components/filings-10k";
+import { BigInvestors } from "@/components/big-investors";
 import { MarkdownDisplay } from "@/components/markdown-display";
 import { NewsItemList } from "@/components/news-item-list";
 import { OrdersTable } from "@/components/orders-table";
@@ -1950,6 +1951,7 @@ export function PayoffDashboard() {
                   <TabsTrigger value="insiderTrades" className="data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-400">Insider Trades</TabsTrigger>
                   <TabsTrigger value="filings8k" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">8-Ks</TabsTrigger>
                   <TabsTrigger value="filings10k" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">10-K</TabsTrigger>
+                  <TabsTrigger value="bigInvestors" className="data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-400">Big Investors</TabsTrigger>
                   <TabsTrigger value="risk" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">Positions & Profile</TabsTrigger>
                   <TabsTrigger value="payoff" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">Payoff Diagram</TabsTrigger>
 
@@ -2098,6 +2100,17 @@ export function PayoffDashboard() {
                         </CardHeader>
                         <CardContent>
                            <FilingsTenK ticker={selectedTicker || ""} />
+                        </CardContent>
+                     </Card>
+                </TabsContent>
+
+                <TabsContent value="bigInvestors" className="mt-4">
+                     <Card className="bg-slate-950 border-white/10">
+                        <CardHeader>
+                           <CardTitle className="text-purple-400">Big Investors holding {selectedTicker}</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                           <BigInvestors ticker={selectedTicker || ""} />
                         </CardContent>
                      </Card>
                 </TabsContent>

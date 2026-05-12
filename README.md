@@ -4,10 +4,11 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?logo=typescript&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white)
 
 <img width="796" height="454" alt="Screenshot 2026-01-05 at 10 12 03" src="https://github.com/user-attachments/assets/bea2750f-0be4-4d8a-bb6e-d1a5c433e8d5" />
 
-A personalized trading dashboard that connects directly to Interactive Brokers (IBKR) TWS for real-time portfolio analysis, payoff diagrams, and market news. **Fully responsive** for desktop and mobile.
+A personalized trading dashboard that connects to Interactive Brokers (IBKR) TWS for real-time portfolio analysis, payoff diagrams, market data, and SEC filings. **Fully responsive** for desktop and mobile.
 
 ## Features
 
@@ -15,16 +16,22 @@ A personalized trading dashboard that connects directly to Interactive Brokers (
 - **Live Connection**: Real-time sync with IBKR TWS positions and P&L
 - **Multi-Account Support**: View positions across all accounts or filter by account
 - **Key Metrics**: Net Liquidation, Daily P&L, Realized P&L, Unrealized P&L
+- **Orders**: Place stock and options orders directly from the dashboard
 
-### Payoff & Risk Analysis  
+### Payoff & Risk Analysis
 - **Interactive Charts**: P&L at different price points for stocks and options
 - **Greeks Dashboard**: Delta, Gamma, Theta, Vega exposure per ticker
 - **IV & Date Simulation**: Stress-test positions with volatility and time changes
-- **Breakevens**: Automatically calculated with max profit/loss
+- **Options Presets**: One-click vertical spreads, straddles, condors, etc.
 
-### Market Data
-- **Price Charts**: Historical price data with 1H, 1D, 1W, 1M, 1Y timeframes
-- **News Tab**: Latest headlines per ticker with full article popups
+### Per-Ticker Research
+- **Price Charts**: Historical OHLC with 1H / 1D / 1W / 1M / 1Y timeframes
+- **News**: Latest headlines with full-article popups and AI-generated price-impact summary
+- **Insights**: Analyst ratings, price targets, and firm-by-firm commentary
+- **Insider Trades**: SEC Form 4 transactions (open-market buys/sells highlighted vs mechanical grants/10b5-1 plans); click an insider's name to see their full cross-company Form 4 history
+- **8-Ks**: Recent SEC current reports with item-code classification (earnings, M&A, leadership, distress, etc.), AI summary banner, and full embedded HTML filings
+- **10-K**: Latest annual report — Business / Risk Factors sections with on-demand AI summaries, plus the full HTML filing embedded inline
+- **Big Investors**: 13F institutional holders with quarter-over-quarter delta (new / added / trimmed / held) sourced from a local SQLite cache
 
 ### Demo Mode
 Run the app without an IBKR connection using sample data—perfect for development or quick demos.
@@ -35,6 +42,9 @@ Run the app without an IBKR connection using sample data—perfect for developme
 
 - **Frontend**: Next.js + React (in `frontend/`)
 - **Backend**: Python FastAPI + ib_insync (in `backend/`)
+- **Local cache**: SQLite at `backend/data/cache.db` for 13F holdings (extensible to prices, etc.) — see `backend/local_db.py`
+- **Provider abstraction**: pluggable data/news/brokerage providers (Massive, Alpaca, IBKR) — selected via `DATA_PROVIDER` / `NEWS_PROVIDER` / `BROKERAGE_PROVIDER` env vars
+- **SEC proxy**: backend embeds SEC filing HTML same-origin (bypasses `X-Frame-Options`) — see `/api/sec-proxy`
 
 ## Quick Start
 
@@ -53,8 +63,13 @@ cp .env.example .env
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `MASSIVE_API_KEY` | API key from [massive.com](https://massive.com) for news data | Yes (for news) |
-| `OPENAI_API_KEY` | OpenAI API key for AI news analysis | Optional |
+| `MASSIVE_API_KEY` | API key from [massive.com](https://massive.com) — price data, news, SEC filings, analyst insights, 13F | Yes |
+| `OPENAI_API_KEY` | OpenAI API key — used for AI news / 8-K / 10-K summaries | Optional |
+| `ALPACA_API_KEY` + `ALPACA_API_SECRET` + `ALPACA_PAPER` | Only if using Alpaca instead of IBKR for brokerage | Optional |
+| `DATA_PROVIDER` / `NEWS_PROVIDER` / `BROKERAGE_PROVIDER` | Pluggable providers (defaults: `massive`, `massive`, `ibkr`) | Optional |
+| `SEC_USER_AGENT` | Identifying string for SEC EDGAR requests (defaults to the maintainer's) | Optional |
+
+> Note: a `credentials.sample.json` file exists in the repo but is not currently read by the backend — environment variables are the source of truth.
 
 ### Run Locally
 ```bash
@@ -64,6 +79,42 @@ cp .env.example .env
 This starts both:
 - **Backend** at `http://localhost:8000`
 - **Frontend** at `http://localhost:3000`
+
+### One-time setup: 13F backfill (for Big Investors tab)
+
+The Big Investors tab reads from a local SQLite cache populated by an ingest script. Run once to backfill the most recent two quarters of 13F filings (~45–60 min for ~6M rows, idempotent):
+
+```bash
+uv run python -m backend.scripts.ingest_13f --quarters 2
+```
+
+The cache lives at `backend/data/cache.db` (gitignored). Without this step, the Big Investors tab will be empty.
+
+### Nightly maintenance
+
+Run these to keep the local cache fresh. Wire them into `cron` / `launchd` / whatever you use:
+
+```bash
+# 1. Pull new 13F filings since the last run. Idempotent (INSERT OR REPLACE).
+#    Adjust --since to a week or so before "now" — covers late filings and amendments.
+uv run python -m backend.scripts.ingest_13f --since "$(date -v-14d +%Y-%m-%d)"
+
+# 2. Retry CUSIP resolution for tickers that previously fell back to the
+#    heuristic. 'verified' entries stay (they're stable). Tomorrow's call to
+#    the Big Investors tab will re-resolve any cleared rows via Massive.
+sqlite3 backend/data/cache.db "DELETE FROM ticker_cusip WHERE resolved_via = 'heuristic';"
+```
+
+Optional, less often (weekly is fine):
+
+```bash
+# Clear ALL CUSIP mappings — forces every ticker to re-resolve. Useful only if
+# you suspect mappings have drifted (e.g., post a corporate action). Costs a
+# few Massive API calls per ticker on the next visit.
+sqlite3 backend/data/cache.db "DELETE FROM ticker_cusip;"
+```
+
+Run order matters: do the 13F ingest first (so freshly-resolved CUSIPs can verify against new data), then the CUSIP cleanup.
 
 ### Access from Phone (LAN)
 
@@ -109,8 +160,12 @@ npm test
 ## Tech Stack
 
 - **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn/ui, Recharts
-- **Backend**: FastAPI, ib_insync, OpenAI, Python 3.13
-- **Data Sources**: Interactive Brokers (positions/trades), Massive.com (news), Polygon.io (ticker logos)
+- **Backend**: FastAPI, ib_insync, httpx, OpenAI, SQLite (stdlib), Python 3.13
+- **Data Sources**:
+  - Interactive Brokers (positions, P&L, orders)
+  - [Massive.com](https://massive.com) (prices, news, analyst insights, SEC filings, 13F holdings)
+  - SEC EDGAR (filing primary documents, submissions metadata — fetched server-side and proxied to bypass `X-Frame-Options`)
+  - OpenAI (news / 8-K / 10-K summarization)
 
 ## Contributing
 

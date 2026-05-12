@@ -401,6 +401,62 @@ export function secProxyUrl(secUrl: string): string {
     return `${API_BASE}/api/sec-proxy?url=${encodeURIComponent(secUrl)}`;
 }
 
+// =====================
+// Big Investors (13F) API
+// =====================
+
+export type HolderChange = "new" | "added" | "trimmed" | "held" | "unknown";
+
+export interface BigInvestorHolder {
+    filer_cik: string;
+    filer_name: string;
+    cusip: string | null;
+    issuer_name: string;
+    market_value: number | null;
+    shares: number | null;
+    prev_shares: number | null;
+    prev_market_value: number | null;
+    delta_shares: number | null;
+    change: HolderChange;
+    put_call: string | null;
+    title_of_class: string | null;
+    investment_discretion: string | null;
+    voting_sole: number | null;
+    voting_shared: number | null;
+    voting_none: number | null;
+    filing_date: string | null;
+    filing_url: string | null;
+    accession_number: string | null;
+}
+
+export interface BigInvestorsResponse {
+    symbol: string;
+    company_name: string;
+    match_term: string;
+    latest_period: string | null;
+    prev_period: string | null;
+    holders: BigInvestorHolder[];
+    holders_count: number;
+    provider: string;
+}
+
+export async function fetchBigInvestors(symbol: string): Promise<BigInvestorsResponse> {
+    return apiRequest<BigInvestorsResponse>(
+        `/api/big-investors/${symbol}`,
+        undefined,
+        {
+            symbol,
+            company_name: "",
+            match_term: "",
+            latest_period: null,
+            prev_period: null,
+            holders: [],
+            holders_count: 0,
+            provider: "unknown",
+        }
+    );
+}
+
 export async function fetchTenKSections(symbol: string): Promise<TenKFiling> {
     return apiRequest(
         `/api/filings-10k/${symbol}`,

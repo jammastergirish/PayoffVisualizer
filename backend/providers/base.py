@@ -64,3 +64,7 @@ class DataProviderInterface(ABC):
     def get_10k_sections(self, symbol: str) -> Dict[str, Any]:
         """Get latest 10-K narrative sections. Default: not supported."""
         return {"period_end": None, "filing_date": None, "filing_url": None, "sections": []}
+
+    def get_big_investors(self, symbol: str) -> Dict[str, Any]:
+        """Get institutional 13F holders for this ticker. Default: not supported."""
+        return {"symbol": symbol.upper(), "holders": [], "holders_count": 0}

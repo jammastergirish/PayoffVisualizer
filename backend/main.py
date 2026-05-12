@@ -493,6 +493,19 @@ def sec_proxy(url: str):
     return Response(content=body, status_code=resp.status_code, headers=headers)
 
 
+@app.get("/api/big-investors/{symbol}")
+def get_big_investors(symbol: str):
+    """
+    Get institutional 13F holders of this ticker from the local SQLite cache.
+
+    Requires the ingest script to have been run first:
+        uv run python -m backend.scripts.ingest_13f --quarters 2
+    """
+    sym = validate_symbol(symbol)
+    data = news_provider.get_big_investors(sym)
+    return {**data, "provider": NEWS_PROVIDER}
+
+
 @app.get("/api/filings-10k/{symbol}")
 def get_10k_sections(symbol: str):
     """

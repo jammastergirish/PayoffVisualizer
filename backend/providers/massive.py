@@ -846,6 +846,167 @@ def _annotate_form4_row(row: dict) -> dict:
 _MASSIVE_BASE = "https://api.massive.com"
 
 
+# Words we strip when matching a company name against 13F `issuer_name`.
+# Anything in this set is removed; whatever's left is the brand.
+_COMPANY_NAME_NOISE = {
+    "INC", "INC.", "CORP", "CORP.", "CORPORATION", "CO", "CO.", "COMPANY",
+    "LTD", "LTD.", "PLC", "LLC", "LP", "HOLDINGS", "GROUP", "&", "AND",
+    "THE", "CLASS", "COMMON", "STOCK", "CAPITAL", "SHARES", "ORD",
+    "ORDINARY", "ADS", "ADR", "SPONSORED", "REPRESENTING",
+    # Single-letter class suffixes like "Class A", "Class C"
+    "A", "B", "C", "D", "E",
+}
+
+
+def _company_name_to_match(name: str) -> str:
+    """Reduce a company name to a SHORT match term (first 1-2 brand tokens).
+
+    Used as a fallback when the full-name match returns no candidates.
+
+    Examples:
+      "Apple Inc."                        → "APPLE"
+      "Berkshire Hathaway Inc"            → "BERKSHIRE HATHAWAY"
+      "Alphabet Inc. Class C Capital Stock" → "ALPHABET"
+      "JPMorgan Chase & Co."              → "JPMORGAN CHASE"
+    """
+    if not name:
+        return ""
+    cleaned = name.upper().replace(",", " ").replace(".", " ")
+    tokens = [t for t in cleaned.split() if t and t not in _COMPANY_NAME_NOISE]
+    return " ".join(tokens[:2]).strip()
+
+
+def _company_name_to_full_match(name: str) -> str:
+    """Reduce a company name to its FULL brand string (all non-noise tokens).
+
+    More precise than the short form; used when narrowing CUSIP candidates.
+
+    Examples:
+      "Goldman Sachs Physical Gold ETF Shares" → "GOLDMAN SACHS PHYSICAL GOLD ETF"
+      "Apple Inc."                              → "APPLE"
+    """
+    if not name:
+        return ""
+    cleaned = name.upper().replace(",", " ").replace(".", " ")
+    tokens = [t for t in cleaned.split() if t and t not in _COMPANY_NAME_NOISE]
+    return " ".join(tokens).strip()
+
+
+def _massive_lookup_ticker_by_cusip(cusip: str) -> Optional[str]:
+    """Ask Massive to map a CUSIP back to a ticker. Returns the ticker symbol
+    if exactly one common-stock match is returned, else None.
+    """
+    if not _api_key or not cusip:
+        return None
+    try:
+        with httpx.Client(timeout=10.0, headers={"Authorization": f"Bearer {_api_key}"}) as client:
+            resp = client.get(
+                f"{_MASSIVE_BASE}/v3/reference/tickers",
+                params={"cusip": cusip, "active": "true", "limit": 5},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        print(f"WARN [Massive]: CUSIP→ticker lookup for {cusip} failed: {e}")
+        return None
+    results = data.get("results") or []
+    if not results:
+        return None
+    # Prefer an exact match against common stock / ETF
+    preferred = [r for r in results if r.get("type") in ("CS", "ETF", "ETN", "ETV", "ADRC", "FUND")]
+    pick = (preferred or results)[0]
+    return pick.get("ticker")
+
+
+def _massive_fetch_company_name(ticker: str) -> Optional[str]:
+    """Fetch a ticker's display name from Massive via direct httpx call.
+
+    Used by `resolve_cusip_for_ticker` to bypass the SDK (which has its own
+    rate-limit behavior that can return errors during heavy concurrent use).
+    """
+    if not _api_key or not ticker:
+        return None
+    try:
+        with httpx.Client(timeout=10.0, headers={"Authorization": f"Bearer {_api_key}"}) as client:
+            resp = client.get(f"{_MASSIVE_BASE}/v3/reference/tickers/{ticker.upper()}")
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        print(f"WARN [Massive]: ticker-details lookup for {ticker} failed: {e}")
+        return None
+    return ((data.get("results") or {}).get("name") or "").strip() or None
+
+
+def resolve_cusip_for_ticker(ticker: str, company_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Look up a ticker's CUSIP, using the local 13F data + Massive as verifier.
+
+    Strategy:
+      1. Return cached row from `ticker_cusip` if present.
+      2. Build a full-name LIKE pattern; grab top CUSIP candidates by
+         aggregated market value in the latest 13F period.
+      3. Verify each top candidate via Massive (`list_tickers?cusip=…`) until
+         one resolves back to our ticker → cache as `verified`.
+      4. If verification fails, fall back to top candidate as `heuristic`.
+      5. If full-name gives 0 candidates, retry with the shorter 2-token match.
+
+    Returns a dict with cusip + metadata, or None if no candidate exists.
+    """
+    from ..sec_filings_db import (
+        get_cached_cusip, upsert_ticker_cusip, get_cusip_candidates,
+    )
+
+    sym = ticker.upper()
+    cached = get_cached_cusip(sym)
+    if cached:
+        return cached
+
+    # Get a real company name. If the caller passed a value that's just the
+    # ticker symbol (likely a fallback from a failed get_ticker_details), try
+    # direct httpx so we have something to match against.
+    if not company_name or company_name.upper().strip() == sym:
+        company_name = _massive_fetch_company_name(sym)
+
+    # No real name means we can't do a meaningful heuristic — bail without
+    # polluting the cache.
+    if not company_name or company_name.upper().strip() == sym:
+        return None
+
+    full_match = _company_name_to_full_match(company_name)
+    short_match = _company_name_to_match(company_name)
+
+    candidates: list[dict] = []
+    if full_match:
+        candidates = get_cusip_candidates(f"%{full_match}%", limit=10)
+    if not candidates and short_match and short_match != full_match:
+        candidates = get_cusip_candidates(f"%{short_match}%", limit=10)
+    if not candidates:
+        return None
+
+    # Try to verify top candidates via Massive — first that resolves to our ticker wins.
+    for cand in candidates[:5]:
+        cusip = cand.get("cusip")
+        if not cusip:
+            continue
+        confirmed = _massive_lookup_ticker_by_cusip(cusip)
+        if confirmed and confirmed.upper() == sym:
+            upsert_ticker_cusip(
+                sym, cusip, company_name, "verified",
+                int(cand.get("total_market_value") or 0),
+            )
+            return get_cached_cusip(sym)
+
+    # No candidate verified; fall back to top by aggregated value.
+    top = candidates[0]
+    cusip = top.get("cusip")
+    if not cusip:
+        return None
+    upsert_ticker_cusip(
+        sym, cusip, company_name, "heuristic",
+        int(top.get("total_market_value") or 0),
+    )
+    return get_cached_cusip(sym)
+
+
 def _cached(cache, key: str, ttl: Optional[int], fetcher, is_valid=bool):
     """Return a cached value (truthy) if present; otherwise call `fetcher` and
     cache the result when `is_valid(result)` is True. Mirrors the existing
@@ -1178,6 +1339,62 @@ class MassiveProvider(DataProviderInterface):
             self.cache_ttl["form8k"],
             lambda: get_8k_filings(symbol, limit),
         )
+
+    def get_big_investors(self, symbol: str) -> Dict[str, Any]:
+        """Get institutional holders of this ticker from the local 13F cache.
+
+        Resolution order:
+          1. Look up ticker's CUSIP (cached in ticker_cusip; otherwise derive
+             from 13F via aggregated market value, verified through Massive).
+             Query holders by CUSIP — exact, no false positives.
+          2. If no CUSIP available, fall back to fuzzy issuer-name match.
+        """
+        from ..sec_filings_db import (
+            get_holders_with_delta, get_holders_by_cusip_with_delta,
+            get_two_latest_periods, get_cik_names,
+        )
+
+        sym = symbol.upper()
+        details = self.get_ticker_details(sym)
+        company_name = (details.get("name") or sym).strip()
+
+        periods = get_two_latest_periods()
+        latest = periods[0] if periods else None
+        prev = periods[1] if len(periods) > 1 else None
+
+        match_used: str = ""
+        resolved_via: Optional[str] = None
+        cusip: Optional[str] = None
+
+        cusip_info = resolve_cusip_for_ticker(sym, company_name)
+        if cusip_info:
+            cusip = cusip_info.get("cusip")
+            resolved_via = cusip_info.get("resolved_via")
+            match_used = f"CUSIP {cusip}"
+            rows = get_holders_by_cusip_with_delta(cusip, latest, prev)
+        else:
+            # Fall back to name-based match
+            match_term = _company_name_to_match(company_name) or sym
+            match_used = f"name ~ {match_term}"
+            rows = get_holders_with_delta(f"%{match_term}%", latest, prev)
+
+        # Attach filer display names
+        ciks = sorted({r["filer_cik"] for r in rows if r.get("filer_cik")})
+        name_map = get_cik_names(ciks)
+        for r in rows:
+            r["filer_name"] = name_map.get(r["filer_cik"], r["filer_cik"])
+
+        return {
+            "symbol": sym,
+            "company_name": company_name,
+            "match_term": match_used,
+            "cusip": cusip,
+            "resolved_via": resolved_via,
+            "latest_period": latest,
+            "prev_period": prev,
+            "holders": rows,
+            "holders_count": len(rows),
+        }
 
     def get_10k_sections(self, symbol: str) -> Dict[str, Any]:
         """Get latest 10-K sections (Business, Risk Factors, etc.) for a ticker."""
