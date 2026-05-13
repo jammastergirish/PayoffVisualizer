@@ -26,6 +26,7 @@ import { InsiderTrades } from "@/components/insider-trades";
 import { FilingsEightK } from "@/components/filings-8k";
 import { FilingsTenK } from "@/components/filings-10k";
 import { BigInvestors } from "@/components/big-investors";
+import { BigFunds } from "@/components/big-funds";
 import { MarkdownDisplay } from "@/components/markdown-display";
 import { NewsItemList } from "@/components/news-item-list";
 import { OrdersTable } from "@/components/orders-table";
@@ -176,7 +177,7 @@ export function PayoffDashboard() {
   const optionsChainCacheRef = useRef<Record<string, OptionsChain>>({});
   
   // Top-level portfolio view tabs
-  const [portfolioView, setPortfolioView] = useState<"news" | "summary" | "detail" | "orders">("detail");
+  const [portfolioView, setPortfolioView] = useState<"news" | "summary" | "detail" | "orders" | "funds">("detail");
   
   // Market News State (separate from per-ticker news)
   const [marketNewsHeadlines, setMarketNewsHeadlines] = useState<NewsHeadline[]>([]);
@@ -1485,12 +1486,13 @@ export function PayoffDashboard() {
       </div>
 
       {/* Portfolio Summary / Detail Tabs */}
-      <Tabs value={portfolioView} onValueChange={(v) => setPortfolioView(v as "news" | "summary" | "detail")} className="w-full">
+      <Tabs value={portfolioView} onValueChange={(v) => setPortfolioView(v as typeof portfolioView)} className="w-full">
         <TabsList className="bg-slate-900 border border-white/10">
           <TabsTrigger value="news" className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-400">Market News</TabsTrigger>
           <TabsTrigger value="summary" className="data-[state=active]:bg-white/10 data-[state=active]:text-white">Portfolio Summary</TabsTrigger>
           <TabsTrigger value="detail" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">Portfolio Detail</TabsTrigger>
           <TabsTrigger value="orders" className="data-[state=active]:bg-indigo-500/20 data-[state=active]:text-indigo-400">Orders</TabsTrigger>
+          <TabsTrigger value="funds" className="data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-400">Institutional Investors</TabsTrigger>
         </TabsList>
         
         {/* Market News Tab */}
@@ -1771,15 +1773,27 @@ export function PayoffDashboard() {
               </Button>
             </CardHeader>
             <CardContent className="pt-4">
-               <OrdersTable 
-                 orders={orders} 
-                 isLoading={ordersLoading} 
+               <OrdersTable
+                 orders={orders}
+                 isLoading={ordersLoading}
                  onNavigate={(symbol) => {
                    setSelectedTicker(symbol);
                    setPortfolioView("detail");
                  }}
                  tickerIcons={Object.fromEntries(Object.entries(tickerDetailsCache).map(([k, v]) => [k, v?.branding?.icon_url]))}
                />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Institutional Investors Tab */}
+        <TabsContent value="funds" className="mt-4">
+          <Card className="bg-slate-950 border-white/10 text-white">
+            <CardHeader className="pb-2 border-b border-white/5">
+              <CardTitle className="text-purple-400">Institutional Investors (13F)</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <BigFunds />
             </CardContent>
           </Card>
         </TabsContent>

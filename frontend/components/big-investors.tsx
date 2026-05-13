@@ -16,8 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FilingEmbed } from "@/components/filing-embed";
+import { FilerHoldingsModal } from "@/components/filer-holdings-modal";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -247,37 +246,7 @@ export function BigInvestors({ ticker }: BigInvestorsProps) {
         </Table>
       </div>
 
-      {/* 13F filing modal — mirrors the 8-K filing modal */}
-      <Dialog open={openHolder !== null} onOpenChange={(open) => !open && setOpenHolder(null)}>
-        <DialogContent
-          style={{ maxWidth: "75vw", width: "75vw" }}
-          className="h-[92vh] max-h-[92vh] overflow-hidden flex flex-col bg-slate-950 border-white/10 text-white"
-        >
-          <DialogHeader className="flex-shrink-0 border-b border-white/10 pb-4">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className="text-xs font-mono px-2 py-1 rounded bg-purple-500/20 text-purple-400 uppercase">
-                13F
-              </span>
-              <span className="text-xs text-slate-400">{openHolder?.filing_date}</span>
-              <span className="text-xs text-slate-500 font-mono">CIK {openHolder?.filer_cik}</span>
-            </div>
-            <DialogTitle className="text-lg font-medium text-white leading-tight pr-8">
-              {openHolder?.filer_name}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 min-h-0 py-3 px-1">
-            {openHolder && (
-              <FilingEmbed
-                cik={openHolder.filer_cik}
-                accession={openHolder.accession_number}
-                fallbackUrl={openHolder.filing_url}
-                title={`13F — ${openHolder.filer_name} — ${openHolder.filing_date}`}
-                className="h-full"
-              />
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <FilerHoldingsModal filer={openHolder} onClose={() => setOpenHolder(null)} />
     </div>
   );
 }

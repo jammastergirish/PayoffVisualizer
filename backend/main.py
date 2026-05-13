@@ -493,6 +493,86 @@ def sec_proxy(url: str):
     return Response(content=body, status_code=resp.status_code, headers=headers)
 
 
+@app.get("/api/funds")
+def list_funds(period: str | None = None, limit: int = 200, search: str | None = None):
+    """
+    List 13F filers (ranked by total reported value) for a given quarter end.
+
+    Default: latest period present in the cache, top 200 by total $ holdings.
+    """
+    from .sec_filings_db import list_filers_with_summary
+    return list_filers_with_summary(period=period, limit=max(1, min(limit, 2000)), search=search)
+
+
+@app.get("/api/13f-holdings/{accession_number}")
+def get_13f_holdings(accession_number: str):
+    """
+    Get all holdings for a single 13F filing from the local cache.
+    """
+    from .sec_filings_db import get_filing_with_holdings
+    data = get_filing_with_holdings(accession_number)
+    if not data:
+        return {"error": "filing not found in local cache", "accession_number": accession_number}
+    return data
+
+
+@app.get("/api/sec-filing-files")
+def get_sec_filing_files(cik: str, accession: str):
+    """List all documents in a SEC filing with both raw and (where available)
+    server-side XSL-rendered URLs.
+
+    For Form 13F, the XSL-rendered URL (`xslForm13F_X02/{name}`) returns proper
+    HTML showing the structured content — needed because the raw XML is just
+    metadata or unstyled.
+    """
+    cik_int = _normalize_cik(cik)
+    if not cik_int:
+        return {"error": "invalid CIK", "files": []}
+    acc_nodash = _accession_no_dashes(accession)
+
+    cache_key = f"sec-files:{cik_int}:{acc_nodash}"
+    cached = news_cache.get(cache_key, 86400 * 7)  # filings are immutable
+    if cached:
+        return cached
+
+    index_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/index.json"
+    try:
+        with httpx.Client(timeout=15.0, headers={"User-Agent": _SEC_UA}) as client:
+            r = client.get(index_url)
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        return {"error": f"failed to list filing: {e}", "files": []}
+
+    items = (data.get("directory") or {}).get("item") or []
+    base = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}"
+    files = []
+    for it in items:
+        name = it.get("name") or ""
+        if not name:
+            continue
+        # Skip index/header housekeeping pages
+        if "-index-headers" in name or name.endswith(".txt"):
+            continue
+        url = f"{base}/{name}"
+        # XSL-rendered version exists for XML form documents
+        rendered_url = None
+        label = name
+        if name.lower().endswith(".xml"):
+            rendered_url = f"{base}/xslForm13F_X02/{name}"
+            if name == "primary_doc.xml":
+                label = "Form 13F Cover Page"
+            else:
+                label = "Form 13F Information Table"
+        elif name.endswith("-index.html"):
+            label = "Filing Index"
+        files.append({"name": name, "label": label, "url": url, "rendered_url": rendered_url})
+
+    result = {"cik": cik_int, "accession": accession, "files": files}
+    news_cache.set(cache_key, result)
+    return result
+
+
 @app.get("/api/big-investors/{symbol}")
 def get_big_investors(symbol: str):
     """

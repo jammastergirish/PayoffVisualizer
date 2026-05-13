@@ -172,6 +172,8 @@ def main() -> None:
     parser.add_argument("--until", type=str, default=None, help="Override end date (YYYY-MM-DD)")
     parser.add_argument("--max-pages", type=int, default=None, help="Stop after N pages (for testing)")
     parser.add_argument("--no-enrich-names", action="store_true", help="Skip data.sec.gov name lookup")
+    parser.add_argument("--no-resolve-cusips", action="store_true", help="Skip CUSIP→ticker batch resolution")
+    parser.add_argument("--cusip-limit", type=int, default=2000, help="Top-N uncached CUSIPs to resolve via Massive (default 2000)")
     args = parser.parse_args()
 
     if args.since:
@@ -186,6 +188,10 @@ def main() -> None:
     if not args.no_enrich_names and summary["filer_ciks"]:
         added = enrich_cik_names(summary["filer_ciks"])
         print(f"[ingest_13f] resolved {added} new filer names")
+
+    if not args.no_resolve_cusips:
+        from backend.providers.massive import backfill_cusip_tickers
+        backfill_cusip_tickers(limit=args.cusip_limit)
 
 
 if __name__ == "__main__":

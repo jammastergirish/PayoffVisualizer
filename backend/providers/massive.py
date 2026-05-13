@@ -918,6 +918,85 @@ def _massive_lookup_ticker_by_cusip(cusip: str) -> Optional[str]:
     return pick.get("ticker")
 
 
+def _massive_resolve_cusip(cusip: str, retries: int = 3) -> Optional[Dict[str, Any]]:
+    """Look up a CUSIP via Massive; return {ticker, name} for the preferred match.
+
+    Retries once on 429 with exponential backoff (5s, 10s, 20s).
+    """
+    if not _api_key or not cusip:
+        return None
+    import time as _time
+    backoff = 5.0
+    for attempt in range(retries):
+        try:
+            with httpx.Client(timeout=15.0, headers={"Authorization": f"Bearer {_api_key}"}) as client:
+                resp = client.get(
+                    f"{_MASSIVE_BASE}/v3/reference/tickers",
+                    params={"cusip": cusip, "active": "true", "limit": 5},
+                )
+            if resp.status_code == 429:
+                if attempt < retries - 1:
+                    _time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                print(f"WARN [Massive]: CUSIP {cusip} rate-limited after {retries} attempts")
+                return None
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            print(f"WARN [Massive]: CUSIP {cusip} lookup failed: {e}")
+            return None
+        results = data.get("results") or []
+        if not results:
+            return None
+        # Prefer common stock / ETFs over warrants/preferreds.
+        preferred = [r for r in results if r.get("type") in ("CS", "ETF", "ETN", "ETV", "ADRC", "FUND")]
+        pick = (preferred or results)[0]
+        return {"ticker": pick.get("ticker"), "name": pick.get("name")}
+    return None
+
+
+def backfill_cusip_tickers(limit: int = 2000, throttle_s: float = 0.5) -> Dict[str, int]:
+    """Walk top-N uncached CUSIPs (by reported value) and populate ticker_cusip.
+
+    Returns a summary dict with counts. Idempotent: skips CUSIPs already cached.
+    """
+    from ..sec_filings_db import get_uncached_top_cusips, upsert_ticker_cusip
+
+    targets = get_uncached_top_cusips(limit=limit)
+    if not targets:
+        print("[backfill_cusip] no uncached CUSIPs found — done.")
+        return {"target": 0, "resolved": 0, "skipped": 0, "errors": 0}
+
+    print(f"[backfill_cusip] resolving {len(targets)} CUSIPs via Massive…")
+    import time as _time
+    resolved = 0
+    skipped = 0
+    errors = 0
+    for i, (cusip, total_mv) in enumerate(targets):
+        try:
+            info = _massive_resolve_cusip(cusip)
+            if info and info.get("ticker"):
+                upsert_ticker_cusip(
+                    info["ticker"],
+                    cusip,
+                    info.get("name"),
+                    "cusip_batch",
+                    int(total_mv or 0),
+                )
+                resolved += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            errors += 1
+            print(f"  WARN: {cusip}: {e}")
+        if (i + 1) % 100 == 0:
+            print(f"  {i+1}/{len(targets)}  resolved={resolved}  skipped={skipped}  errors={errors}")
+        _time.sleep(throttle_s)
+    print(f"[backfill_cusip] done: resolved={resolved}  skipped={skipped}  errors={errors}")
+    return {"target": len(targets), "resolved": resolved, "skipped": skipped, "errors": errors}
+
+
 def _massive_fetch_company_name(ticker: str) -> Optional[str]:
     """Fetch a ticker's display name from Massive via direct httpx call.
 

@@ -80,41 +80,42 @@ This starts both:
 - **Backend** at `http://localhost:8000`
 - **Frontend** at `http://localhost:3000`
 
-### One-time setup: 13F backfill (for Big Investors tab)
+### One-time setup: 13F backfill (for Institutional Investors tab)
 
-The Big Investors tab reads from a local SQLite cache populated by an ingest script. Run once to backfill the most recent two quarters of 13F filings (~45–60 min for ~6M rows, idempotent):
+The Big Investors and Institutional Investors tabs read from a local SQLite cache populated by an ingest script. Run once to backfill the most recent two quarters of 13F filings (~50–65 min for ~6M holdings + filer-name enrichment + CUSIP→ticker resolution):
 
 ```bash
 uv run python -m backend.scripts.ingest_13f --quarters 2
 ```
 
-The cache lives at `backend/data/cache.db` (gitignored). Without this step, the Big Investors tab will be empty.
+That single command does three phases:
+1. Paginated scan of Massive's 13F endpoint → upserts filings + holdings.
+2. Filer-name enrichment via `data.sec.gov/submissions` for each unique CIK.
+3. CUSIP → ticker resolution for the top 2,000 uncached CUSIPs (by aggregated reported value), via Massive.
+
+Flags to skip phases (e.g. for testing): `--no-enrich-names`, `--no-resolve-cusips`, `--cusip-limit N`.
+
+The cache lives at `backend/data/cache.db` (gitignored). Without this step, the Institutional Investors tab will be empty.
 
 ### Nightly maintenance
 
-Run these to keep the local cache fresh. Wire them into `cron` / `launchd` / whatever you use:
+Wire this into `cron` / `launchd` / whatever you use. The single command picks up new filings, resolves any new CIK names, and extends CUSIP coverage:
 
 ```bash
-# 1. Pull new 13F filings since the last run. Idempotent (INSERT OR REPLACE).
-#    Adjust --since to a week or so before "now" — covers late filings and amendments.
+# Pull new 13F filings since two weeks ago (covers late filings + amendments),
+# plus enrich any new filer names and CUSIPs that appear. Idempotent.
 uv run python -m backend.scripts.ingest_13f --since "$(date -v-14d +%Y-%m-%d)"
-
-# 2. Retry CUSIP resolution for tickers that previously fell back to the
-#    heuristic. 'verified' entries stay (they're stable). Tomorrow's call to
-#    the Big Investors tab will re-resolve any cleared rows via Massive.
-sqlite3 backend/data/cache.db "DELETE FROM ticker_cusip WHERE resolved_via = 'heuristic';"
 ```
 
-Optional, less often (weekly is fine):
+Optional weekly cleanup if you suspect CUSIP mappings drifted (corporate actions, share-class changes):
 
 ```bash
-# Clear ALL CUSIP mappings — forces every ticker to re-resolve. Useful only if
-# you suspect mappings have drifted (e.g., post a corporate action). Costs a
-# few Massive API calls per ticker on the next visit.
+# Retry heuristic CUSIPs (next visit re-resolves them via Massive).
+sqlite3 backend/data/cache.db "DELETE FROM ticker_cusip WHERE resolved_via = 'heuristic';"
+
+# Or nuke the entire CUSIP cache (forces every ticker to re-resolve).
 sqlite3 backend/data/cache.db "DELETE FROM ticker_cusip;"
 ```
-
-Run order matters: do the 13F ingest first (so freshly-resolved CUSIPs can verify against new data), then the CUSIP cleanup.
 
 ### Access from Phone (LAN)
 

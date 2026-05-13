@@ -440,6 +440,107 @@ export interface BigInvestorsResponse {
     provider: string;
 }
 
+export interface FilingHolding {
+    cusip: string | null;
+    ticker: string | null;
+    issuer_name: string;
+    market_value: number | null;
+    shares: number | null;
+    shares_type: string | null;
+    put_call: string | null;
+    title_of_class: string | null;
+    investment_discretion: string | null;
+    voting_sole: number | null;
+    voting_shared: number | null;
+    voting_none: number | null;
+}
+
+export interface FilingWithHoldings {
+    accession_number: string;
+    filer_cik: string;
+    filer_name: string | null;
+    filing_date: string;
+    period: string;
+    form_type: string | null;
+    filing_url: string | null;
+    holdings: FilingHolding[];
+    holdings_count: number;
+    total_market_value: number;
+    error?: string;
+}
+
+export async function fetch13FHoldings(accession: string): Promise<FilingWithHoldings> {
+    return apiRequest<FilingWithHoldings>(
+        `/api/13f-holdings/${encodeURIComponent(accession)}`,
+        undefined,
+        {
+            accession_number: accession,
+            filer_cik: "",
+            filer_name: null,
+            filing_date: "",
+            period: "",
+            form_type: null,
+            filing_url: null,
+            holdings: [],
+            holdings_count: 0,
+            total_market_value: 0,
+        }
+    );
+}
+
+export interface SecFilingFile {
+    name: string;
+    label: string;
+    url: string;
+    rendered_url: string | null;
+}
+
+export interface SecFilingFilesResponse {
+    cik: string;
+    accession: string;
+    files: SecFilingFile[];
+    error?: string;
+}
+
+export interface FundSummary {
+    accession_number: string;
+    filer_cik: string;
+    filer_name: string | null;
+    filing_date: string | null;
+    period: string;
+    form_type: string | null;
+    filing_url: string | null;
+    positions: number;
+    total_market_value: number | null;
+}
+
+export interface FundsResponse {
+    period: string | null;
+    total_filers: number;
+    funds: FundSummary[];
+}
+
+export async function fetchFunds(opts?: { search?: string; limit?: number; period?: string }): Promise<FundsResponse> {
+    const params = new URLSearchParams();
+    if (opts?.search) params.set("search", opts.search);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.period) params.set("period", opts.period);
+    const qs = params.toString();
+    return apiRequest<FundsResponse>(
+        `/api/funds${qs ? `?${qs}` : ""}`,
+        undefined,
+        { period: null, total_filers: 0, funds: [] }
+    );
+}
+
+export async function fetchSecFilingFiles(cik: string, accession: string): Promise<SecFilingFilesResponse> {
+    return apiRequest<SecFilingFilesResponse>(
+        `/api/sec-filing-files?cik=${encodeURIComponent(cik)}&accession=${encodeURIComponent(accession)}`,
+        undefined,
+        { cik, accession, files: [] }
+    );
+}
+
 export async function fetchBigInvestors(symbol: string): Promise<BigInvestorsResponse> {
     return apiRequest<BigInvestorsResponse>(
         `/api/big-investors/${symbol}`,

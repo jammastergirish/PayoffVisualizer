@@ -220,6 +220,117 @@ def get_cik_names(ciks: list[str]) -> dict[str, str]:
     return {r["cik"]: r["name"] for r in rows}
 
 
+def list_filers_with_summary(
+    period: Optional[str] = None,
+    limit: int = 200,
+    search: Optional[str] = None,
+) -> dict:
+    """List 13F filers in a given period (latest by default), with summary
+    stats and the accession number of their filing for that period.
+
+    Returns {period, total_filers, funds: [...]}.
+    """
+    if not period:
+        periods = get_two_latest_periods()
+        if not periods:
+            return {"period": None, "total_filers": 0, "funds": []}
+        period = periods[0]
+
+    # First, count total filers in the period (after search filter, if any).
+    base_join = (
+        "FROM sec_filings_13f f "
+        "LEFT JOIN cik_meta m ON m.cik = f.filer_cik "
+    )
+    where_clauses = ["f.period = ?"]
+    params: list = [period]
+    if search and search.strip():
+        where_clauses.append("(m.name LIKE ? OR f.filer_cik LIKE ?)")
+        like = f"%{search.strip()}%"
+        params.extend([like, like])
+    where_sql = " WHERE " + " AND ".join(where_clauses)
+
+    conn = get_conn()
+    try:
+        total = conn.execute(
+            f"SELECT COUNT(DISTINCT f.filer_cik) {base_join} {where_sql}",
+            tuple(params),
+        ).fetchone()[0]
+
+        # Pick the latest filing per filer in this period (highest filing_date),
+        # join holdings aggregates.
+        sql = f"""
+            WITH ranked AS (
+                SELECT f.accession_number, f.filer_cik, f.filing_date, f.period,
+                       f.form_type, f.filing_url, m.name AS filer_name,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY f.filer_cik
+                           ORDER BY f.filing_date DESC, f.accession_number DESC
+                       ) AS rn
+                {base_join}
+                {where_sql}
+            ),
+            picked AS (SELECT * FROM ranked WHERE rn = 1)
+            SELECT p.accession_number, p.filer_cik, p.filing_date, p.period,
+                   p.form_type, p.filing_url, p.filer_name,
+                   COUNT(h.id) AS positions,
+                   SUM(h.market_value) AS total_market_value
+            FROM picked p
+            LEFT JOIN sec_holdings_13f h
+                ON h.accession_number = p.accession_number
+               AND (h.put_call IS NULL OR h.put_call = '')
+            GROUP BY p.accession_number
+            ORDER BY total_market_value DESC NULLS LAST
+            LIMIT ?
+        """
+        rows = conn.execute(sql, tuple(params) + (limit,)).fetchall()
+    finally:
+        conn.close()
+
+    funds = [dict(r) for r in rows]
+    return {"period": period, "total_filers": total, "funds": funds}
+
+
+def get_filing_with_holdings(accession_number: str) -> Optional[dict]:
+    """Return one 13F filing plus all of its holdings, joined with cik_meta."""
+    conn = get_conn()
+    try:
+        filing_row = conn.execute(
+            """
+            SELECT f.accession_number, f.filer_cik, f.filing_date, f.period,
+                   f.form_type, f.filing_url, m.name AS filer_name
+            FROM sec_filings_13f f
+            LEFT JOIN cik_meta m ON m.cik = f.filer_cik
+            WHERE f.accession_number = ?
+            """,
+            (accession_number,),
+        ).fetchone()
+        if not filing_row:
+            return None
+        holding_rows = conn.execute(
+            """
+            SELECT h.cusip, h.issuer_name, h.market_value, h.shares, h.shares_type,
+                   h.put_call, h.title_of_class, h.investment_discretion,
+                   h.voting_sole, h.voting_shared, h.voting_none,
+                   tc.ticker AS ticker
+            FROM sec_holdings_13f h
+            LEFT JOIN ticker_cusip tc ON tc.cusip = h.cusip
+            WHERE h.accession_number = ?
+            ORDER BY h.market_value DESC NULLS LAST
+            """,
+            (accession_number,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    filing = dict(filing_row)
+    holdings = [dict(r) for r in holding_rows]
+    total_mv = sum(h["market_value"] or 0 for h in holdings)
+    filing["holdings"] = holdings
+    filing["holdings_count"] = len(holdings)
+    filing["total_market_value"] = total_mv
+    return filing
+
+
 def get_cached_cusip(ticker: str) -> Optional[dict]:
     """Return the cached CUSIP row for a ticker, if any."""
     conn = get_conn()
@@ -254,6 +365,31 @@ def upsert_ticker_cusip(ticker: str, cusip: str, company_name: Optional[str],
         conn.commit()
     finally:
         conn.close()
+
+
+def get_uncached_top_cusips(limit: int = 2000) -> list[tuple]:
+    """Return top-N CUSIPs by aggregated market value in our 13F holdings that
+    aren't yet in ticker_cusip. Returns list of (cusip, total_market_value).
+    """
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT h.cusip, SUM(h.market_value) AS total_mv
+            FROM sec_holdings_13f h
+            LEFT JOIN ticker_cusip tc ON tc.cusip = h.cusip
+            WHERE h.cusip IS NOT NULL
+              AND (h.put_call IS NULL OR h.put_call = '')
+              AND tc.cusip IS NULL
+            GROUP BY h.cusip
+            ORDER BY total_mv DESC NULLS LAST
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [(r["cusip"], r["total_mv"] or 0) for r in rows]
 
 
 def get_cusip_candidates(name_pattern: str, latest_period: Optional[str] = None, limit: int = 10) -> list[dict]:
